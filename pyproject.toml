@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+
+[project]
+name = "roman-shear-sims"
+version = "0.0.1"
+authors = [
+  { name="Axel Guinot", email="axel.guinot.astro@gmail.com" },
+]
+description = "Simple Roman shear simulations"
+readme = "README.md"
+requires-python = ">=3.7"
+license = {text = "MIT"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy>=1.24.4",
+    "galsim>=2.6",
+    "astropy>=2.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/aguinot/roman-shear-sims"
+"Bug Tracker" = "https://github.com/aguinot/roman-shear-sims/issues"
+
+[tool.setuptools]
+packages = [
+  "roman_shear_sims"
+]
