@@ -159,3 +159,77 @@ class SkyCatalogInterfaceNew(SkyCatalogInterface):
             gs_object.object_type = "transient"
 
         return gs_object
+
+    def getObjFixSed(
+        self, index, fixed_sed, rng=None, gsparams=None, bandpass=None
+    ):
+        if not self.objects:
+            raise RuntimeError(
+                "Trying to get an object from an empty sky catalog"
+            )
+
+        if bandpass is None:
+            bandpass = self.bandpass
+
+        skycat_obj = self.objects[index]
+
+        # Use the pre-computed flux and skip if the object is too faint
+        flux_quick = (
+            skycat_obj.get_native_attribute(f"roman_flux_{bandpass.name}")
+            * self.exptime
+            * roman.collecting_area
+        )
+        if np.isnan(flux_quick):
+            return None
+        if flux_quick < 60:
+            return None
+
+        flux = flux_quick
+        if np.isnan(flux):
+            return None
+        gsobjs = self.get_gsobject_components(skycat_obj, rng, gsparams)
+        if hasattr(self, "_seds"):
+            seds = self._seds
+        else:
+            seds = skycat_obj.get_observer_sed_components(mjd=self.mjd)
+
+        # First we compute the flux fraction for each component
+        flux_components = {}
+        total_flux = 0
+        for component in gsobjs:
+            if component in seds:
+                flux_components[component] = seds[component].calculateFlux(
+                    bandpass
+                )
+                total_flux += flux_components[component]
+
+        gs_obj_list = []
+        for component in gsobjs:
+            gs_obj_list.append(
+                gsobjs[component] * flux_components[component] / total_flux
+            )
+        if not gs_obj_list:
+            return None
+
+        if len(gs_obj_list) == 1:
+            gs_object = gs_obj_list[0]
+        else:
+            gs_object = galsim.Add(gs_obj_list)
+
+        gs_object *= fixed_sed.withFlux(flux, bandpass)
+
+        # Give the object the right flux
+        gs_object.flux = flux
+        gs_object.withFlux(gs_object.flux, bandpass)
+
+        # Get the object type
+        if (skycat_obj.object_type == "diffsky_galaxy") | (
+            skycat_obj.object_type == "galaxy"
+        ):
+            gs_object.object_type = "galaxy"
+        if skycat_obj.object_type == "star":
+            gs_object.object_type = "star"
+        if skycat_obj.object_type == "snana":
+            gs_object.object_type = "transient"
+
+        return gs_object

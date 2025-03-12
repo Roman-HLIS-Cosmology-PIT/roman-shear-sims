@@ -29,6 +29,7 @@ def make_sim(
     bands=["Y106", "J129", "H158"],
     g1=[0.02, -0.02],
     g2=[0.0, 0.0],
+    fix_sed=False,
     simple_noise=False,
     noise_sigma=None,
     skycat_path="/Users/aguinot/Documents/euclid_sim/imsim_data/skyCatalog.yaml",
@@ -44,9 +45,11 @@ def make_sim(
     )
 
     # Average galaxy SED
-    sed_wave, avg_gal_sed = np.load(avg_gal_sed_path)
-    sed_lt = galsim.LookupTable(sed_wave, avg_gal_sed, interpolant="linear")
-    sed = galsim.SED(sed_lt, wave_type="nm", flux_type="fnu")
+    sed_wave, avg_gal_sed_arr = np.load(avg_gal_sed_path)
+    sed_lt = galsim.LookupTable(
+        sed_wave, avg_gal_sed_arr, interpolant="linear"
+    )
+    avg_gal_sed = galsim.SED(sed_lt, wave_type="nm", flux_type="flambda")
 
     wcs_simple = make_simple_wcs(cell_center_world, img_size=cell_size_pix)
 
@@ -69,7 +72,7 @@ def make_sim(
     final_dict = {}
     for band in tqdm(bands, desc="Band loop", disable=not verbose):
         bp_ = roman.getBandpasses()[band]
-        star_psf = galsim.DeltaFunction() * sed.withFlux(1, bp_)
+        star_psf = galsim.DeltaFunction() * avg_gal_sed.withFlux(1, bp_)
         seed_band = rng.randint(2**32)
         rng_band = np.random.RandomState(seed_band)
         epoch_list = []
@@ -160,7 +163,14 @@ def make_sim(
                     desc="Obj loop",
                     disable=not verbose,
                 ):
-                    gal = skycat.getObj(obj_ind, rng=rng_galsim, bandpass=bp_)
+                    if fix_sed:
+                        gal = skycat.getObjFixSed(
+                            obj_ind, avg_gal_sed, rng=rng_galsim, bandpass=bp_
+                        )
+                    else:
+                        gal = skycat.getObj(
+                            obj_ind, rng=rng_galsim, bandpass=bp_
+                        )
                     if gal is None:
                         continue
 
@@ -188,7 +198,7 @@ def make_sim(
                     obj = galsim.Convolve([gal, psf])
 
                     obj.drawImage(
-                        bp_,
+                        bandpass=bp_,
                         image=stamp_image,
                         wcs=wcs,
                         method="phot",
