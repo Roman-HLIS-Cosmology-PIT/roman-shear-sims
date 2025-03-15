@@ -119,7 +119,7 @@ def get_SCA_WCS(world_pos, SCA, PA=0.0, img_size=None):
     return wcs
 
 
-def make_simple_wcs(world_pos, PA=0.0, img_size=None):
+def make_simple_exp_wcs(world_pos, PA=0.0, img_size=None):
     PA *= galsim.degrees
     crval = world_pos
 
@@ -155,6 +155,20 @@ def make_simple_wcs(world_pos, PA=0.0, img_size=None):
 
     affine = galsim.AffineTransform(
         dudx, dudy, dvdx, dvdy, origin=image_center
+    )
+    wcs = galsim.TanWCS(affine, world_pos, units=galsim.arcsec)
+    return wcs
+
+
+def make_simple_coadd_wcs(world_pos, img_size=None):
+    pixel_scale = roman.pixel_scale
+
+    image_origin = galsim.PositionD(img_size / 2, img_size / 2)
+
+    mat = np.array([[pixel_scale, 0], [0, pixel_scale]])
+
+    affine = galsim.AffineTransform(
+        mat[0, 0], mat[0, 1], mat[1, 0], mat[1, 1], origin=image_origin
     )
     wcs = galsim.TanWCS(affine, world_pos, units=galsim.arcsec)
     return wcs

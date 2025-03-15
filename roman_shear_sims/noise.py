@@ -3,7 +3,7 @@ from galsim import roman
 
 
 def make_roman_noise(
-    noise_image, bandpass, exp_time, mjd, world_pos, galsim_rng
+    noise_image, bandpass, exp_time, world_pos, galsim_rng, mjd=None
 ):
     # Sky
     sky_level = roman.getSkyLevel(bandpass, world_pos=world_pos, date=mjd)
@@ -34,4 +34,3 @@ def make_simple_noise(noise_image, sigma, galsim_rng):
 
     # Apply gain
     noise_image /= roman.gain
-    noise_image.quantize()

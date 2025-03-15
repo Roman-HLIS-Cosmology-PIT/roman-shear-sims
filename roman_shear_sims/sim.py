@@ -13,69 +13,54 @@ import galsim
 from galsim import roman
 
 from .utils import random_ra_dec_in_healpix
-from .catalog import SkyCatalogInterfaceNew
 from .noise import make_roman_noise, make_simple_noise
-from .wcs import get_SCA_WCS, make_simple_wcs, make_oversample_local_wcs
+from .wcs import (
+    get_SCA_WCS,
+    make_oversample_local_wcs,
+    # make_simple_coadd_wcs,
+)
 
 
 def make_sim(
-    seed,
-    mjd,
+    rng,
+    galaxy_catalog,
+    psf_maker,
     n_epochs=6,
     exp_time=107,
     cell_size_pix=500,
     oversamp_factor=3,
-    stamp_size=150,
+    # stamp_size=150,
     bands=["Y106", "J129", "H158"],
-    g1=[0.02, -0.02],
-    g2=[0.0, 0.0],
-    fix_sed=False,
+    g1=0.0,
+    g2=0.0,
+    chromatic=True,
     simple_noise=False,
     noise_sigma=None,
-    skycat_path="/Users/aguinot/Documents/euclid_sim/imsim_data/skyCatalog.yaml",
+    draw_method="phot",
     avg_gal_sed_path="/Users/aguinot/Documents/roman/test_metacoadd/gal_avg_nz_sed.npy",
     verbose=True,
 ):
-    rng = np.random.RandomState(seed)
-
     cell_center_ra, cell_center_dec = random_ra_dec_in_healpix(rng, 32, 10307)
 
     cell_center_world = galsim.CelestialCoord(
         cell_center_ra * galsim.degrees, cell_center_dec * galsim.degrees
     )
 
-    # Average galaxy SED
-    sed_wave, avg_gal_sed_arr = np.load(avg_gal_sed_path)
-    sed_lt = galsim.LookupTable(
-        sed_wave, avg_gal_sed_arr, interpolant="linear"
-    )
-    avg_gal_sed = galsim.SED(sed_lt, wave_type="nm", flux_type="flambda")
-
-    wcs_simple = make_simple_wcs(cell_center_world, img_size=cell_size_pix)
-
-    skycat = SkyCatalogInterfaceNew(
-        skycat_path,
-        exp_time,
-        wcs=wcs_simple,
-        mjd=mjd,
-        xsize=cell_size_pix,
-        ysize=cell_size_pix,
-        obj_types=[
-            "diffsky_galaxy",
-        ],
-        edge_pix=50,
-    )
-
-    n_obj = skycat.getNObjects()
-
     # Band loop
     final_dict = {}
     for band in tqdm(bands, desc="Band loop", disable=not verbose):
-        bp_ = roman.getBandpasses()[band]
-        star_psf = galsim.DeltaFunction() * avg_gal_sed.withFlux(1, bp_)
-        seed_band = rng.randint(2**32)
-        rng_band = np.random.RandomState(seed_band)
+        # bp_ = roman.getBandpasses()[band]
+        # star_psf = galsim.DeltaFunction()
+        # if chromatic:
+        # star_psf *= avg_gal_sed.withFlux(1, bp_)
+        # wave_psf = None
+        # bp_draw = bp_
+        # else:
+        # wave_psf = bp_.effective_wavelength
+        # bp_draw = None
         epoch_list = []
+
+        psf_maker.init_psf(band=band)
 
         # Epoch loop
         for i in tqdm(
@@ -84,142 +69,208 @@ def make_sim(
             leave=False,
             disable=not verbose,
         ):
-            seed_epoch = rng_band.randint(2**32)
-            rng_epoch = np.random.RandomState(seed_epoch)
-
-            sca = rng_epoch.randint(1, roman.n_sca + 1)
-            epoch_dict = {
-                "sca": sca,
-            }
-            wcs = get_SCA_WCS(
+            epoch_dict = make_exp(
+                rng,
+                galaxy_catalog,
+                psf_maker,
+                band,
                 cell_center_world,
-                sca,
-                PA=0.0,
-                img_size=cell_size_pix,
+                g1,
+                g2,
+                exp_time=exp_time,
+                cell_size_pix=cell_size_pix,
+                oversamp_factor=oversamp_factor,
+                chromatic=chromatic,
+                simple_noise=simple_noise,
+                noise_sigma=noise_sigma,
+                draw_method=draw_method,
+                avg_gal_sed_path=avg_gal_sed_path,
+                verbose=verbose,
             )
-            epoch_dict["wcs"] = wcs
-
-            psf = roman.getPSF(
-                sca,
-                bp_.name,
-                galsim.PositionD(roman.n_pix / 2, roman.n_pix / 2),
-                pupil_bin=8,
-                wcs=wcs,
-                n_waves=16,
-            )
-
-            ## Make noise
-            noise_img = galsim.Image(cell_size_pix, cell_size_pix, wcs=wcs)
-            rng_galsim_noise = galsim.BaseDeviate(seed_epoch)
-            if not simple_noise:
-                make_roman_noise(
-                    noise_img,
-                    bp_,
-                    exp_time,
-                    mjd,
-                    cell_center_world,
-                    rng_galsim_noise,
-                )
-            else:
-                if noise_sigma is None:
-                    raise ValueError("noise_sigma must be provided")
-                make_simple_noise(
-                    noise_img,
-                    noise_sigma,
-                    rng_galsim_noise,
-                )
-
-            ## Make avg PSF
-            wcs_oversampled = make_oversample_local_wcs(
-                wcs,
-                cell_center_world,
-                oversamp_factor,
-            )
-            psf_obj = galsim.Convolve(psf, star_psf)
-            psf_img = psf_obj.drawImage(
-                nx=151,
-                ny=151,
-                wcs=wcs_oversampled,
-                bandpass=bp_,
-            )
-            epoch_dict["psf_avg"] = psf_img.array
-
-            # Shear loop
-            for g1_, g2_ in tqdm(
-                zip(g1, g2),
-                total=len(g1),
-                leave=False,
-                desc="Shear loop",
-                disable=not verbose,
-            ):
-                rng_galsim = galsim.BaseDeviate(seed_epoch)
-                final_img = galsim.Image(cell_size_pix, cell_size_pix, wcs=wcs)
-
-                # Object loop
-                for obj_ind in tqdm(
-                    range(n_obj),
-                    total=n_obj,
-                    leave=False,
-                    desc="Obj loop",
-                    disable=not verbose,
-                ):
-                    if fix_sed:
-                        gal = skycat.getObjFixSed(
-                            obj_ind, avg_gal_sed, rng=rng_galsim, bandpass=bp_
-                        )
-                    else:
-                        gal = skycat.getObj(
-                            obj_ind, rng=rng_galsim, bandpass=bp_
-                        )
-                    if gal is None:
-                        continue
-
-                    world_pos = skycat.getWorldPos(obj_ind)
-                    image_pos = wcs.toImage(world_pos)
-
-                    # Set center and offset
-                    nominal_x = image_pos.x + 0.5
-                    nominal_y = image_pos.y + 0.5
-
-                    stamp_center = galsim.PositionI(
-                        int(math.floor(nominal_x + 0.5)),
-                        int(math.floor(nominal_y + 0.5)),
-                    )
-                    stamp_offset = galsim.PositionD(
-                        nominal_x - stamp_center.x, nominal_y - stamp_center.y
-                    )
-
-                    bounds = galsim.BoundsI(1, stamp_size, 1, stamp_size)
-                    bounds = bounds.shift(stamp_center - bounds.center)
-                    stamp_image = galsim.Image(bounds=bounds, wcs=wcs)
-
-                    # Make obj
-                    gal = gal.shear(g1=g1_, g2=g2_)
-                    obj = galsim.Convolve([gal, psf])
-
-                    obj.drawImage(
-                        bandpass=bp_,
-                        image=stamp_image,
-                        wcs=wcs,
-                        method="phot",
-                        offset=stamp_offset,
-                        rng=rng_galsim,
-                        maxN=int(1e6),
-                        add_to_image=True,
-                    )
-
-                    b = stamp_image.bounds & final_img.bounds
-                    if b.isDefined():
-                        final_img[b] += stamp_image[b]
-
-                final_img /= roman.gain
-                final_img.quantize()
-                final_img += noise_img
-                epoch_dict[f"img_{g1_}_{g2_}"] = final_img.array
-                epoch_dict["noise"] = noise_img.array
-                epoch_dict["noise_var"] = noise_img.array.var()
-                epoch_dict["weight"] = 1 / noise_img.array.var()
             epoch_list.append(epoch_dict)
         final_dict[band] = epoch_list
 
     return final_dict
+
+
+def make_exp(
+    rng,
+    galaxy_catalog,
+    psf_maker,
+    band,
+    cell_center_world,
+    g1,
+    g2,
+    exp_time=107,
+    cell_size_pix=500,
+    oversamp_factor=3,
+    chromatic=True,
+    simple_noise=False,
+    noise_sigma=None,
+    draw_method="phot",
+    avg_gal_sed_path=None,
+    verbose=True,
+):
+    bp_ = roman.getBandpasses()[band]
+    seed_epoch = rng.randint(0, 2**32)
+
+    sca = rng.randint(1, roman.n_sca + 1)
+    epoch_dict = {
+        "sca": sca,
+    }
+    wcs = get_SCA_WCS(
+        cell_center_world,
+        sca,
+        PA=0.0,
+        img_size=cell_size_pix,
+    )
+    epoch_dict["wcs"] = wcs
+
+    psf = psf_maker.get_psf(wcs=wcs, sca=sca)
+
+    ## Make noise
+    noise_img = galsim.Image(cell_size_pix, cell_size_pix, wcs=wcs)
+    rng_galsim = galsim.BaseDeviate(seed_epoch)
+    if not simple_noise:
+        make_roman_noise(
+            noise_img,
+            bp_,
+            exp_time,
+            cell_center_world,
+            rng_galsim,
+        )
+    else:
+        if noise_sigma is None:
+            raise ValueError("noise_sigma must be provided")
+        make_simple_noise(
+            noise_img,
+            noise_sigma,
+            rng_galsim,
+        )
+
+    ## Make avg PSF used for deconvolution
+    psf_img_deconv, wcs_oversampled = get_deconv_psf(
+        psf,
+        wcs,
+        cell_center_world,
+        bp=bp_,
+        oversamp_factor=oversamp_factor,
+        chromatic=chromatic,
+        avg_gal_sed_path=avg_gal_sed_path,
+    )
+    epoch_dict["psf_avg"] = psf_img_deconv
+    epoch_dict["wcs_oversampled"] = wcs_oversampled
+
+    final_img = galsim.Image(cell_size_pix, cell_size_pix, wcs=wcs)
+
+    n_obj = galaxy_catalog.getNObjects()
+    objlist = galaxy_catalog.getObjList()
+    # Object loop
+    for obj_ind in tqdm(
+        range(n_obj),
+        total=n_obj,
+        leave=False,
+        desc="Obj loop",
+        disable=not verbose,
+    ):
+        gal = objlist["gsobject"][obj_ind]
+        dx = objlist["dx"][obj_ind]
+        dy = objlist["dy"][obj_ind]
+        # Make obj
+        gal = gal.shear(g1=g1, g2=g2)
+        obj = galsim.Convolve([gal, psf])
+
+        world_pos = cell_center_world.deproject(
+            dx * galsim.arcsec,
+            dy * galsim.arcsec,
+        )
+        image_pos = wcs.toImage(world_pos)
+
+        # Set center and offset
+        nominal_x = image_pos.x + 0.5
+        nominal_y = image_pos.y + 0.5
+
+        stamp_center = galsim.PositionI(
+            int(math.floor(nominal_x + 0.5)),
+            int(math.floor(nominal_y + 0.5)),
+        )
+        stamp_offset = galsim.PositionD(
+            nominal_x - stamp_center.x, nominal_y - stamp_center.y
+        )
+
+        if draw_method == "phot":
+            rng_draw = rng_galsim
+            maxN = int(1e6)
+        else:
+            stamp_size = obj.getGoodImageSize(roman.pixel_scale)
+            rng_draw = None
+            maxN = None
+
+        bounds = galsim.BoundsI(1, stamp_size, 1, stamp_size)
+        bounds = bounds.shift(stamp_center - bounds.center)
+        stamp_image = galsim.Image(bounds=bounds, wcs=wcs)
+
+        obj.drawImage(
+            bandpass=bp_,
+            image=stamp_image,
+            wcs=wcs.local(world_pos=world_pos),
+            method=draw_method,
+            offset=stamp_offset,
+            rng=rng_draw,
+            maxN=maxN,
+            add_to_image=True,
+        )
+
+        b = stamp_image.bounds & final_img.bounds
+        if b.isDefined():
+            final_img[b] += stamp_image[b]
+
+        final_img /= roman.gain
+        final_img += noise_img
+        epoch_dict["sci"] = final_img.array
+        epoch_dict["noise"] = noise_img.array
+        epoch_dict["noise_var"] = noise_img.array.var()
+        epoch_dict["weight"] = (
+            np.ones_like(noise_img.array) / noise_img.array.var()
+        )
+    return epoch_dict
+
+
+def get_deconv_psf(
+    psf,
+    wcs,
+    cell_center_world,
+    bp=None,
+    oversamp_factor=3,
+    chromatic=False,
+    avg_gal_sed_path=None,
+):
+    star_psf = galsim.DeltaFunction()
+
+    # Average galaxy SED
+    if chromatic:
+        sed_wave, avg_gal_sed_arr = np.load(avg_gal_sed_path)
+        sed_lt = galsim.LookupTable(
+            sed_wave, avg_gal_sed_arr, interpolant="linear"
+        )
+        avg_gal_sed = galsim.SED(sed_lt, wave_type="nm", flux_type="fnu")
+        star_psf *= avg_gal_sed
+
+    wcs_oversampled = make_oversample_local_wcs(
+        wcs,
+        cell_center_world,
+        oversamp_factor,
+    )
+    wcs_local_center = wcs.local(world_pos=cell_center_world)
+    pixel_ori = wcs_local_center.toWorld(galsim.Pixel(1))
+    psf_obj = galsim.Convolve(psf, star_psf)
+    psf_obj = galsim.Convolve(psf_obj, pixel_ori)
+    psf_img = psf_obj.drawImage(
+        nx=151,
+        ny=151,
+        wcs=wcs_oversampled,
+        bandpass=bp,
+        method="no_pixel",
+    )
+
+    return psf_img.array, wcs_oversampled
