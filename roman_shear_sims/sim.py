@@ -87,6 +87,7 @@ def make_sim(
                 avg_gal_sed_path=avg_gal_sed_path,
                 verbose=verbose,
             )
+            epoch_dict["cell_center_world"] = cell_center_world
             epoch_list.append(epoch_dict)
         final_dict[band] = epoch_list
 
@@ -199,6 +200,7 @@ def make_exp(
         )
 
         if draw_method == "phot":
+            stamp_size = 150
             rng_draw = rng_galsim
             maxN = int(1e6)
         else:
