@@ -134,6 +134,10 @@ def get_simple_pos(
     spacing=5.0,
     n_gal=None,
 ):
+    """
+    Those functions are taken from the descwl-shear-sims package,
+    refs: https://github.com/LSSTDESC/descwl-shear-sims/blob/master/descwl_shear_sims/layout/shifts.py
+    """
     pixel_scale = roman.pixel_scale
 
     img_size = img_size
@@ -152,12 +156,14 @@ def get_simple_pos(
     spacing = spacing
 
     if layout_kind == "grid":
-        n_gal_side = int(np.floor(img_size_world / spacing))
+        n_obj_side = int(np.floor((img_size_world) / spacing))
+        if n_obj_side == 0:
+            n_obj_side = 1
 
-        start = spacing / 2.0
-        end = img_size_world - spacing / 2.0
-        x = np.linspace(start, end, n_gal_side)
-        msk = (x >= buffer_world) & (x <= img_size_world - buffer_world)
+        x = spacing * (np.arange(n_obj_side) - (n_obj_side - 1) / 2)
+        msk = (x >= -(img_size_world / 2 - buffer_world)) & (
+            x <= img_size_world / 2 - buffer_world
+        )
         x = x[msk]
 
         xx, yy = np.meshgrid(x, x)
@@ -184,7 +190,7 @@ def get_simple_pos(
             size=n_gal,
         )
 
-    xx -= img_size_world / 2.0
-    yy -= img_size_world / 2.0
+        xx -= img_size_world / 2.0
+        yy -= img_size_world / 2.0
 
     return xx, yy
