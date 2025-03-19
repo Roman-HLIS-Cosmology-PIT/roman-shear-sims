@@ -227,14 +227,14 @@ def make_exp(
         if b.isDefined():
             final_img[b] += stamp_image[b]
 
-        final_img /= roman.gain
-        final_img += noise_img
-        epoch_dict["sci"] = final_img.array
-        epoch_dict["noise"] = noise_img.array
-        epoch_dict["noise_var"] = noise_img.array.var()
-        epoch_dict["weight"] = (
-            np.ones_like(noise_img.array) / noise_img.array.var()
-        )
+    final_img /= roman.gain
+    final_img += noise_img
+    epoch_dict["sci"] = final_img.array
+    epoch_dict["noise"] = noise_img.array
+    epoch_dict["noise_var"] = noise_img.array.var()
+    epoch_dict["weight"] = (
+        np.ones_like(noise_img.array) / noise_img.array.var()
+    )
     return epoch_dict
 
 

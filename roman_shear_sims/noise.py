@@ -14,9 +14,8 @@ def make_roman_noise(
     noise_image.quantize()
 
     # Dark noise
-    dark_noise = galsim.PoissonNoise(
-        rng=galsim_rng, sky_level=roman.dark_current * exp_time
-    )
+    dark_curr_lvl = roman.dark_current * exp_time
+    dark_noise = galsim.PoissonNoise(rng=galsim_rng, sky_level=dark_curr_lvl)
     noise_image.addNoise(dark_noise)
 
     # Read noise
