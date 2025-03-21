@@ -126,6 +126,7 @@ def make_exp(
         img_size=cell_size_pix,
     )
     epoch_dict["wcs"] = wcs
+    epoch_dict["flux_scaling"] = galaxy_catalog.get_flux_scaling(band)
 
     psf = psf_maker.get_psf(wcs=wcs, sca=sca)
 

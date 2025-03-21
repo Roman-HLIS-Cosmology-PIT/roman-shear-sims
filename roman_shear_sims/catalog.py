@@ -3,7 +3,7 @@ import numpy as np
 import galsim
 from galsim import roman
 
-from .constant import ROMAN_N_EFF, DEFAULT_HLR, DEFAULT_MAG
+from .constant import ROMAN_N_EFF, DEFAULT_HLR, DEFAULT_MAG, COMMON_ZERO_POINT
 
 
 LAYOUT_KINDS = ["grid", "random"]
@@ -124,6 +124,11 @@ class SimpleGalaxyCatalog:
             + 2.5 * np.log10(self._exp_time * roman.collecting_area)
             - 2.5 * np.log10(roman.gain)
         )
+
+    def get_flux_scaling(self, band, target_zp=COMMON_ZERO_POINT):
+        current_zp = self._get_zeropoint(band)
+        zp_diff = target_zp - current_zp
+        return 10 ** (0.4 * zp_diff)
 
 
 def get_simple_pos(

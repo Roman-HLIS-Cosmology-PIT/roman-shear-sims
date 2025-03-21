@@ -1,7 +1,7 @@
 import galsim
 from galsim import roman
 
-ZERO_POINT = 30
+COMMON_ZERO_POINT = 30
 
 SCALE = roman.pixel_scale
 
