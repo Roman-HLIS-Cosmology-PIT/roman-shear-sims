@@ -50,6 +50,8 @@ class SimpleGalaxyCatalog:
         spacing=5.0,
         n_gal=None,
         exp_time=roman.exptime,
+        chromatic=False,
+        gal_sed_path=None,
     ):
         self.img_size = img_size
         self.rng = rng
@@ -72,13 +74,15 @@ class SimpleGalaxyCatalog:
         self.spacing = spacing
         self.n_gal = n_gal
 
-        self._init_catalog()
+        self._chromatic = chromatic
+        self._init_catalog(chromatic, gal_sed_path)
 
     def getNObjects(self):
         return len(self.dx)
 
     def getObjList(self, band="Y106"):
-        zp = self._get_zeropoint(band)
+        bp = roman.getBandpasses()[band]
+        zp = self._get_zeropoint(bp)
         objlist = {
             "gsobject": [],
             "dx": [],
@@ -86,13 +90,16 @@ class SimpleGalaxyCatalog:
         }
         for i in range(self.getNObjects()):
             flux = self.get_flux(i, zp)
-            gsobject = self.get_gsobject(i).withFlux(flux)
+            if self._chromatic:
+                gsobject = self.get_gsobject(i).withFlux(flux, bandpass=bp)
+            else:
+                gsobject = self.get_gsobject(i).withFlux(flux)
             objlist["gsobject"].append(gsobject)
             objlist["dx"].append(self.dx[i])
             objlist["dy"].append(self.dy[i])
         return objlist
 
-    def _init_catalog(self):
+    def _init_catalog(self, chromatic=False, gal_sed_path=None):
         self.dx, self.dy = get_simple_pos(
             self.img_size,
             self.rng,
@@ -102,15 +109,24 @@ class SimpleGalaxyCatalog:
             n_gal=self.n_gal,
         )
 
-        self._set_gsobject()
+        if chromatic:
+            gal_sed = self._get_sed(gal_sed_path)
+        else:
+            gal_sed = 1
+
+        self._set_gsobject(gal_sed)
+        self._set_gsobject_delta(gal_sed)
 
     def get_gsobject(self, index):
         return self.gsobject
 
+    def get_gsobject_delta(self):
+        return self.gsobject_delta
+
     def get_flux(self, index, zp):
         return 10 ** (-0.4 * (self._mag - zp))
 
-    def _set_gsobject(self):
+    def _set_gsobject(self, gal_sed=1):
         if self.gal_type == "gauss":
             self.gsobject = galsim.Gaussian(half_light_radius=self._hlr)
         elif self.gal_type == "exp":
@@ -118,17 +134,32 @@ class SimpleGalaxyCatalog:
         elif self.gal_type == "dev":
             self.gsobject = galsim.DeVaucouleurs(half_light_radius=self._hlr)
 
-    def _get_zeropoint(self, band):
+        self.gsobject *= gal_sed
+
+    def _set_gsobject_delta(self, gal_sed=1):
+        self.gsobject_delta = galsim.DeltaFunction()
+        self.gsobject_delta *= gal_sed
+
+    def _get_zeropoint(self, bp):
         return (
-            roman.getBandpasses()[band].zeropoint
+            bp.zeropoint
             + 2.5 * np.log10(self._exp_time * roman.collecting_area)
             - 2.5 * np.log10(roman.gain)
         )
 
     def get_flux_scaling(self, band, target_zp=COMMON_ZERO_POINT):
-        current_zp = self._get_zeropoint(band)
+        bp = roman.getBandpasses()[band]
+        current_zp = self._get_zeropoint(bp)
         zp_diff = target_zp - current_zp
         return 10 ** (0.4 * zp_diff)
+
+    def _get_sed(self, gal_sed_path):
+        sed_wave, avg_gal_sed_arr = np.load(gal_sed_path)
+        sed_lt = galsim.LookupTable(
+            sed_wave, avg_gal_sed_arr, interpolant="linear"
+        )
+        sed = galsim.SED(sed_lt, wave_type="nm", flux_type="fnu")
+        return sed
 
 
 def get_simple_pos(
@@ -198,4 +229,7 @@ def get_simple_pos(
         xx -= img_size_world / 2.0
         yy -= img_size_world / 2.0
 
-    return xx, yy
+    if n_gal is None and layout_kind == "grid":
+        n_gal = len(xx)
+
+    return xx[:n_gal], yy[:n_gal]

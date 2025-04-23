@@ -17,8 +17,10 @@ from .noise import make_roman_noise, make_simple_noise
 from .wcs import (
     get_SCA_WCS,
     make_oversample_local_wcs,
-    # make_simple_coadd_wcs,
+    make_simple_exp_wcs,
+    make_simple_coadd_wcs,
 )
+from .constant import WORLD_ORIGIN
 
 
 def make_sim(
@@ -33,18 +35,19 @@ def make_sim(
     bands=["Y106", "J129", "H158"],
     g1=0.0,
     g2=0.0,
-    chromatic=True,
+    chromatic=False,
     simple_noise=False,
     noise_sigma=None,
     draw_method="phot",
     avg_gal_sed_path="/Users/aguinot/Documents/roman/test_metacoadd/gal_avg_nz_sed.npy",
     verbose=True,
 ):
-    cell_center_ra, cell_center_dec = random_ra_dec_in_healpix(rng, 32, 10307)
+    # cell_center_ra, cell_center_dec = random_ra_dec_in_healpix(rng, 32, 10307)
 
-    cell_center_world = galsim.CelestialCoord(
-        cell_center_ra * galsim.degrees, cell_center_dec * galsim.degrees
-    )
+    # cell_center_world = galsim.CelestialCoord(
+    #     cell_center_ra * galsim.degrees, cell_center_dec * galsim.degrees
+    # )
+    cell_center_world = WORLD_ORIGIN
 
     # Band loop
     final_dict = {}
@@ -119,16 +122,43 @@ def make_exp(
     epoch_dict = {
         "sca": sca,
     }
+
+    # shift_ra, shift_dec = rng.uniform(
+    #     -roman.pixel_scale / 2, roman.pixel_scale / 2.0, 2
+    # )
+    # shift_world = galsim.CelestialCoord(
+    #     shift_ra * galsim.arcsec, shift_dec * galsim.arcsec
+    # )
+    # exp_center = galsim.CelestialCoord(
+    #     cell_center_world.ra + shift_world.ra,
+    #     cell_center_world.dec + shift_world.dec,
+    # )
+    exp_center = cell_center_world
     wcs = get_SCA_WCS(
-        cell_center_world,
+        # cell_center_world,
+        exp_center,
         sca,
+        # PA=pa_point,
         PA=0.0,
         img_size=cell_size_pix,
     )
+    # wcs = make_simple_exp_wcs(
+    #     cell_center_world,
+    #     PA=0.0,
+    #     img_size=cell_size_pix,
+    # )
+    # wcs = make_simple_coadd_wcs(
+    #     cell_center_world,
+    #     img_size=cell_size_pix,
+    # )
     epoch_dict["wcs"] = wcs
     epoch_dict["flux_scaling"] = galaxy_catalog.get_flux_scaling(band)
 
-    psf = psf_maker.get_psf(wcs=wcs, sca=sca)
+    psf = psf_maker.get_psf(
+        sca=sca,
+        image_pos=galsim.PositionD(roman.n_pix / 2, roman.n_pix / 2),
+        wcs=wcs,
+    )
 
     ## Make noise
     noise_img = galsim.Image(cell_size_pix, cell_size_pix, wcs=wcs)
@@ -138,7 +168,8 @@ def make_exp(
             noise_img,
             bp_,
             exp_time,
-            cell_center_world,
+            # cell_center_world,
+            exp_center,
             rng_galsim,
         )
     else:
@@ -151,17 +182,28 @@ def make_exp(
         )
 
     ## Make avg PSF used for deconvolution
-    psf_img_deconv, wcs_oversampled = get_deconv_psf(
+    psf_img_deconv, wcs_oversampled, psf_obj_deconv = get_deconv_psf(
         psf,
         wcs,
-        cell_center_world,
+        # cell_center_world,
+        exp_center,
         bp=bp_,
         oversamp_factor=oversamp_factor,
         chromatic=chromatic,
-        avg_gal_sed_path=avg_gal_sed_path,
+        # avg_gal_sed_path=avg_gal_sed_path,
+        avg_gal_sed_path=None,
     )
     epoch_dict["psf_avg"] = psf_img_deconv
+    epoch_dict["psf_avg_galsim"] = psf_obj_deconv
     epoch_dict["wcs_oversampled"] = wcs_oversampled
+
+    if chromatic:
+        epoch_dict["psf_true_galsim"] = galsim.Convolve(
+            galaxy_catalog.get_gsobject_delta().withFlux(1, bp_),
+            psf,
+        )
+    else:
+        epoch_dict["psf_true_galsim"] = None
 
     final_img = galsim.Image(cell_size_pix, cell_size_pix, wcs=wcs)
 
@@ -205,23 +247,28 @@ def make_exp(
             rng_draw = rng_galsim
             maxN = int(1e6)
         else:
-            stamp_size = obj.getGoodImageSize(roman.pixel_scale)
+            # stamp_size = obj.getGoodImageSize(roman.pixel_scale)
+            # print(stamp_size)
+            stamp_size = 100
             rng_draw = None
             maxN = None
 
-        bounds = galsim.BoundsI(1, stamp_size, 1, stamp_size)
-        bounds = bounds.shift(stamp_center - bounds.center)
-        stamp_image = galsim.Image(bounds=bounds, wcs=wcs)
+        # bounds = galsim.BoundsI(1, stamp_size, 1, stamp_size)
+        # bounds = bounds.shift(stamp_center - bounds.center)
+        # stamp_image = galsim.Image(bounds=bounds, wcs=wcs)
 
-        obj.drawImage(
+        stamp_image = obj.drawImage(
+            nx=stamp_size,
+            ny=stamp_size,
             bandpass=bp_,
-            image=stamp_image,
+            # image=stamp_image,
             wcs=wcs.local(world_pos=world_pos),
             method=draw_method,
-            offset=stamp_offset,
+            # offset=stamp_offset,
+            center=image_pos,
             rng=rng_draw,
             maxN=maxN,
-            add_to_image=True,
+            # add_to_image=True,
         )
 
         b = stamp_image.bounds & final_img.bounds
@@ -252,12 +299,31 @@ def get_deconv_psf(
 
     # Average galaxy SED
     if chromatic:
-        sed_wave, avg_gal_sed_arr = np.load(avg_gal_sed_path)
-        sed_lt = galsim.LookupTable(
-            sed_wave, avg_gal_sed_arr, interpolant="linear"
-        )
-        avg_gal_sed = galsim.SED(sed_lt, wave_type="nm", flux_type="fnu")
-        star_psf *= avg_gal_sed
+        if avg_gal_sed_path is None:
+            sed = galsim.SED("vega.txt", "nm", "flambda")
+            # sed = galsim.SED(
+            #     galsim.LookupTable(
+            #         [100, 1000, 2000], [0.0, 1.0, 10.0], interpolant="linear"
+            #     ),
+            #     wave_type="nm",
+            #     flux_type="flambda",
+            # )
+            # avg_star_sed_path = "/Users/aguinot/Documents/roman/test_metacoadd/star_avg_sed.npz"
+            # sed_wave, avg_star_sed_arr = (
+            #     np.load(avg_star_sed_path)["x"],
+            #     np.load(avg_star_sed_path)["y"],
+            # )
+            # sed_lt = galsim.LookupTable(
+            #     sed_wave, avg_star_sed_arr, interpolant="linear"
+            # )
+            # sed = galsim.SED(sed_lt, wave_type="nm", flux_type="flambda")
+        else:
+            sed_wave, avg_gal_sed_arr = np.load(avg_gal_sed_path)
+            sed_lt = galsim.LookupTable(
+                sed_wave, avg_gal_sed_arr, interpolant="linear"
+            )
+            sed = galsim.SED(sed_lt, wave_type="nm", flux_type="fnu")
+        star_psf *= sed.withFlux(1, bp)
 
     wcs_oversampled = make_oversample_local_wcs(
         wcs,
@@ -269,11 +335,11 @@ def get_deconv_psf(
     psf_obj = galsim.Convolve(psf, star_psf)
     psf_obj = galsim.Convolve(psf_obj, pixel_ori)
     psf_img = psf_obj.drawImage(
-        nx=151,
-        ny=151,
+        nx=301,
+        ny=301,
         wcs=wcs_oversampled,
         bandpass=bp,
         method="no_pixel",
     )
 
-    return psf_img.array, wcs_oversampled
+    return psf_img.array, wcs_oversampled, psf_obj

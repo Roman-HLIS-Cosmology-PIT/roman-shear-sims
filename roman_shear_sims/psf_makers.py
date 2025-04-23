@@ -63,7 +63,7 @@ class PSFMaker:
                 bandpass=self.band,
                 SCA_pos=image_pos,
                 pupil_bin=self.pupil_bin,
-                wcs=None,
+                wcs=wcs,
                 n_waves=self.n_waves,
                 wavelength=wave,
             )
