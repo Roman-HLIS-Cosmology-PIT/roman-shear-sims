@@ -1,6 +1,13 @@
 import concurrent.futures
 import atexit
 from joblib.externals.loky import get_reusable_executor
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    message=".*A worker stopped while some jobs were given to the executor.*",
+)
+
 
 _executor = None
 # _executor = get_reusable_executor()
@@ -17,7 +24,10 @@ def get_executor():
 def cleanup_executor():
     global _executor
     if _executor is not None:
-        _executor.shutdown(wait=True)
+        try:
+            _executor.shutdown(wait=True)
+        except Exception:
+            pass
         _executor = None
 
 
