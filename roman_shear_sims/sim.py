@@ -46,6 +46,9 @@ def make_sim(
     noise_sigma=None,
     draw_method="phot",
     avg_gal_sed_path="/Users/aguinot/Documents/roman/test_metacoadd/gal_avg_nz_sed.npy",
+    make_child_process=False,
+    make_deconv_psf=True,
+    make_true_psf=True,
     verbose=True,
 ):
     # Set center
@@ -75,45 +78,51 @@ def make_sim(
             leave=False,
             disable=not verbose,
         ):
-            # epoch_dict = make_exp(
-            #     rng,
-            #     galaxy_catalog,
-            #     psf_maker,
-            #     band,
-            #     cell_center_world,
-            #     g1,
-            #     g2,
-            #     pa_point=pa,
-            #     exp_time=exp_time,
-            #     cell_size_pix=cell_size_pix,
-            #     oversamp_factor=oversamp_factor,
-            #     chromatic=chromatic,
-            #     simple_noise=simple_noise,
-            #     noise_sigma=noise_sigma,
-            #     draw_method=draw_method,
-            #     avg_gal_sed_path=avg_gal_sed_path,
-            #     verbose=verbose,
-            # )
-            epoch_dict = run_in_child_process(
-                make_exp,
-                rng,
-                galaxy_catalog,
-                psf_maker,
-                band,
-                cell_center_world,
-                g1,
-                g2,
-                pa_point=pa,
-                exp_time=exp_time,
-                cell_size_pix=cell_size_pix,
-                oversamp_factor=oversamp_factor,
-                chromatic=chromatic,
-                simple_noise=simple_noise,
-                noise_sigma=noise_sigma,
-                draw_method=draw_method,
-                avg_gal_sed_path=avg_gal_sed_path,
-                verbose=verbose,
-            )
+            if not make_child_process:
+                epoch_dict = make_exp(
+                    rng,
+                    galaxy_catalog,
+                    psf_maker,
+                    band,
+                    cell_center_world,
+                    g1,
+                    g2,
+                    pa_point=pa,
+                    exp_time=exp_time,
+                    cell_size_pix=cell_size_pix,
+                    oversamp_factor=oversamp_factor,
+                    chromatic=chromatic,
+                    simple_noise=simple_noise,
+                    noise_sigma=noise_sigma,
+                    draw_method=draw_method,
+                    avg_gal_sed_path=avg_gal_sed_path,
+                    make_deconv_psf=make_deconv_psf,
+                    make_true_psf=make_true_psf,
+                    verbose=verbose,
+                )
+            else:
+                epoch_dict = run_in_child_process(
+                    make_exp,
+                    rng,
+                    galaxy_catalog,
+                    psf_maker,
+                    band,
+                    cell_center_world,
+                    g1,
+                    g2,
+                    pa_point=pa,
+                    exp_time=exp_time,
+                    cell_size_pix=cell_size_pix,
+                    oversamp_factor=oversamp_factor,
+                    chromatic=chromatic,
+                    simple_noise=simple_noise,
+                    noise_sigma=noise_sigma,
+                    draw_method=draw_method,
+                    avg_gal_sed_path=avg_gal_sed_path,
+                    make_deconv_psf=make_deconv_psf,
+                    make_true_psf=make_true_psf,
+                    verbose=verbose,
+                )
             epoch_dict["cell_center_world"] = cell_center_world
             epoch_list.append(epoch_dict)
         final_dict[band] = epoch_list
@@ -148,6 +157,8 @@ def make_exp(
     noise_sigma=None,
     draw_method="phot",
     avg_gal_sed_path=None,
+    make_deconv_psf=False,
+    make_true_psf=False,
     verbose=True,
 ):
     bp_ = roman.getBandpasses()[band]
@@ -206,22 +217,40 @@ def make_exp(
         )
 
     # Make avg PSF used for deconvolution
-    psf_img_deconv, wcs_oversampled, psf_obj_deconv = get_deconv_psf(
-        psf,
-        wcs,
-        # cell_center_world,
-        exp_center,
-        bp=bp_,
-        oversamp_factor=oversamp_factor,
-        chromatic=chromatic,
-        # avg_gal_sed_path=avg_gal_sed_path,
-        avg_gal_sed_path=None,
-    )
-    epoch_dict["psf_avg"] = psf_img_deconv
-    epoch_dict["psf_avg_galsim"] = psf_obj_deconv
-    epoch_dict["wcs_oversampled"] = wcs_oversampled
+    wcs_oversampled = None
+    if make_deconv_psf:
+        wcs_oversampled = make_oversample_local_wcs(
+            wcs,
+            cell_center_world,
+            oversamp_factor,
+        )
+        psf_img_deconv, wcs_oversampled, psf_obj_deconv = get_deconv_psf(
+            psf,
+            wcs,
+            wcs_oversampled,
+            # cell_center_world,
+            exp_center,
+            bp=bp_,
+            oversamp_factor=oversamp_factor,
+            chromatic=chromatic,
+            # avg_gal_sed_path=avg_gal_sed_path,
+            avg_gal_sed_path=None,
+        )
+        epoch_dict["psf_avg"] = psf_img_deconv
+        epoch_dict["psf_avg_galsim"] = psf_obj_deconv
+        epoch_dict["wcs_oversampled"] = wcs_oversampled
+    else:
+        epoch_dict["psf_avg"] = None
+        epoch_dict["psf_avg_galsim"] = None
 
-    if chromatic:
+    # Make true PSF
+    if chromatic & make_true_psf:
+        if wcs_oversampled is None:
+            wcs_oversampled = make_oversample_local_wcs(
+                wcs,
+                cell_center_world,
+                oversamp_factor,
+            )
         epoch_dict["psf_true_galsim"] = get_true_psf(
             galaxy_catalog.get_gsobject_delta().withFlux(1, bp_),
             psf,
@@ -230,9 +259,11 @@ def make_exp(
         )
     else:
         epoch_dict["psf_true_galsim"] = None
+    epoch_dict["wcs_oversampled"] = wcs_oversampled
 
-    n_obj = galaxy_catalog.getNObjects()
-    objlist = galaxy_catalog.getObjList()
+    # n_obj = galaxy_catalog.getNObjects()
+    objlist = galaxy_catalog.getObjList(bandpass=bp_)
+    n_obj = len(objlist["gsobject"])
 
     epoch_dict["sci"] = {}
     for g1_, g2_ in zip(g1, g2):
@@ -374,6 +405,7 @@ def get_true_psf(star, psf, wcs, bp):
 def get_deconv_psf(
     psf,
     wcs,
+    wcs_oversampled,
     cell_center_world,
     bp=None,
     oversamp_factor=3,
@@ -410,11 +442,6 @@ def get_deconv_psf(
             sed = galsim.SED(sed_lt, wave_type="nm", flux_type="fnu")
         star_psf *= sed.withFlux(1, bp)
 
-    wcs_oversampled = make_oversample_local_wcs(
-        wcs,
-        cell_center_world,
-        oversamp_factor,
-    )
     wcs_local_center = wcs.local(world_pos=cell_center_world)
     pixel_ori = wcs_local_center.toWorld(galsim.Pixel(1))
     psf_obj = galsim.Convolve(psf, star_psf)

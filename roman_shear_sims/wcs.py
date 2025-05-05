@@ -3,6 +3,9 @@ import numpy as np
 import galsim
 from galsim import roman
 
+from astropy.io.fits.header import Header
+from astropy.wcs import WCS
+
 import coord
 
 
@@ -160,7 +163,7 @@ def make_simple_exp_wcs(world_pos, PA=0.0, img_size=None):
     return wcs
 
 
-def make_simple_coadd_wcs(world_pos, img_size=None):
+def make_simple_coadd_wcs(world_pos, img_size, as_astropy=False):
     pixel_scale = roman.pixel_scale
 
     image_origin = galsim.PositionD(img_size / 2, img_size / 2)
@@ -171,7 +174,17 @@ def make_simple_coadd_wcs(world_pos, img_size=None):
         mat[0, 0], mat[0, 1], mat[1, 0], mat[1, 1], origin=image_origin
     )
     wcs = galsim.TanWCS(affine, world_pos, units=galsim.arcsec)
-    return wcs
+
+    if not as_astropy:
+        return wcs
+    else:
+        h = Header()
+        b = galsim.BoundsI(1, img_size, 1, img_size)
+        wcs.writeToFitsHeader(h, b)
+        h["NAXIS"] = 2
+        h["NAXIS1"] = img_size
+        h["NAXIS2"] = img_size
+        return WCS(h)
 
 
 def make_oversample_local_wcs(wcs, world_pos, oversamp_factor):

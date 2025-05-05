@@ -1,4 +1,7 @@
+import numba as nb
+
 import numpy as np
+import pandas as pd
 
 import healpy as hp
 
@@ -37,3 +40,32 @@ def random_ra_dec_in_healpix(rng, nside, pixel_index):
     dec = 90 - np.degrees(new_theta)  # Theta is measured from the north pole
 
     return ra, dec
+
+
+@nb.njit()
+def _get_sed_ind(gal_index):
+    hp_ind = np.empty(len(gal_index), dtype=np.int64)
+    new_ind = np.empty(len(gal_index), dtype=np.int64)
+    for i, ind in enumerate(gal_index):
+        hp_ind[i] = int(ind // 1000000000)
+        new_ind[i] = int(ind // 100000)
+
+    return hp_ind, new_ind
+
+
+def get_new_df_index(obj_id):
+    hp_pixels, sed_grp = _get_sed_ind(obj_id)
+    df_ind = pd.MultiIndex.from_frame(
+        pd.DataFrame(
+            {
+                "pixel": hp_pixels,
+                "sed_ind": sed_grp,
+                "index": np.arange(len(hp_pixels)),
+            }
+        )
+    )
+    return df_ind
+
+
+def get_dl(cosmo, z):
+    return cosmo.luminosity_distance(z).value
