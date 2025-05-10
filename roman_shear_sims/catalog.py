@@ -21,10 +21,6 @@ from .skycatlog_parser import (
     COMPONENTS,
 )
 
-from time import time
-
-from memory_profiler import profile
-
 
 LAYOUT_KINDS = ["grid", "random"]
 GAL_TYPES = ["gauss", "exp", "dev"]
@@ -250,7 +246,6 @@ class DiffSkyCatalog(SimpleGalaxyCatalog):
             gal_sed_path=gal_sed_path,
         )
 
-    @profile
     def _init_catalog(
         self,
         coadd_center,

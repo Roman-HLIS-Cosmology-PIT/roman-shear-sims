@@ -22,9 +22,6 @@ import healpy as hp
 from .wcs import make_simple_coadd_wcs
 from .utils import get_new_df_index, get_dl
 
-from memory_profiler import profile
-import sys
-
 
 HEALPIX_TEMPLATE = r"(?P<healpix>\d+)"
 COMPONENTS = ["bulge", "disk", "knots"]
@@ -140,7 +137,6 @@ class SkyCatalogParser:
             Ob0=self.config["Cosmology"]["Ob0"],
         )
 
-    @profile
     def set_catalog(self, object_type):
         if object_type not in self.object_types:
             raise ValueError(

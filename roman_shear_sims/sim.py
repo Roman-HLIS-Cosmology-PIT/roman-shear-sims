@@ -5,7 +5,6 @@ if get_ipython().__class__.__name__ == "ZMQInteractiveShell":
 else:
     from tqdm import tqdm
 from memory_profiler import profile
-import gc
 
 # import concurrent.futures
 from .executor_utils import get_executor
@@ -357,7 +356,6 @@ def get_stamp(
         maxN = int(1e6)
     else:
         # stamp_size = obj.getGoodImageSize(roman.pixel_scale)
-        # print(stamp_size)
         stamp_size = 100
         rng_draw = None
         maxN = None
@@ -372,8 +370,6 @@ def get_stamp(
         rng=rng_draw,
         maxN=maxN,
     )
-    del obj
-    gc.collect()
 
     return stamp_image
 
