@@ -4,7 +4,7 @@ if get_ipython().__class__.__name__ == "ZMQInteractiveShell":
     from tqdm.notebook import tqdm
 else:
     from tqdm import tqdm
-# from memory_profiler import profile
+from memory_profiler import profile
 import gc
 
 # import concurrent.futures
@@ -224,7 +224,8 @@ def make_exp(
             cell_center_world,
             oversamp_factor,
         )
-        psf_img_deconv, wcs_oversampled, psf_obj_deconv = get_deconv_psf(
+        # psf_img_deconv, wcs_oversampled, psf_obj_deconv = get_deconv_psf(
+        psf_img_deconv, wcs_oversampled = get_deconv_psf(
             psf,
             wcs,
             wcs_oversampled,
@@ -237,7 +238,7 @@ def make_exp(
             avg_gal_sed_path=None,
         )
         epoch_dict["psf_avg"] = psf_img_deconv
-        epoch_dict["psf_avg_galsim"] = psf_obj_deconv
+        # epoch_dict["psf_avg_galsim"] = psf_obj_deconv
         epoch_dict["wcs_oversampled"] = wcs_oversampled
     else:
         epoch_dict["psf_avg"] = None
@@ -309,9 +310,11 @@ def make_exp(
     epoch_dict["weight"] = (
         np.ones_like(noise_img.array) / noise_img.array.var()
     )
+
     return epoch_dict
 
 
+# @profile
 def get_stamp(
     obj,
     dx,
@@ -392,14 +395,15 @@ def get_true_psf(star, psf, wcs, bp):
         # n_photons=1e6,
     )
 
-    interp_img = galsim.InterpolatedImage(
-        true_psf_img, x_interpolant="lanczos15"
-    )
+    # interp_img = galsim.InterpolatedImage(
+    #     true_psf_img, x_interpolant="lanczos15"
+    # )
     # pix = wcs.toWorld(galsim.Pixel(1))
     # inv_pix = galsim.Deconvolve(pix)
     # interp_img = galsim.Convolve(interp_img, inv_pix)
 
-    return interp_img
+    # return interp_img
+    return true_psf_img.array
 
 
 def get_deconv_psf(
@@ -457,4 +461,4 @@ def get_deconv_psf(
         # rng=galsim.BaseDeviate(42),
     )
 
-    return psf_img.array, wcs_oversampled, psf_obj
+    return psf_img.array, wcs_oversampled  # , psf_obj

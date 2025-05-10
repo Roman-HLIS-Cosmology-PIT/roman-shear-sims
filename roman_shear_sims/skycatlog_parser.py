@@ -5,8 +5,10 @@ import h5py
 
 import numpy as np
 import pandas as pd
+import polars as pl
 
 import galsim
+import galsim.roman as roman
 
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord
@@ -19,6 +21,9 @@ import healpy as hp
 
 from .wcs import make_simple_coadd_wcs
 from .utils import get_new_df_index, get_dl
+
+from memory_profiler import profile
+import sys
 
 
 HEALPIX_TEMPLATE = r"(?P<healpix>\d+)"
@@ -135,6 +140,7 @@ class SkyCatalogParser:
             Ob0=self.config["Cosmology"]["Ob0"],
         )
 
+    @profile
     def set_catalog(self, object_type):
         if object_type not in self.object_types:
             raise ValueError(
@@ -142,17 +148,27 @@ class SkyCatalogParser:
             )
 
         file_paths = self._get_cat_paths(object_type)
-        filters = [
-            ("ra", ">", self._reg_radec.vertices.ra.deg.min()),
-            ("ra", "<", self._reg_radec.vertices.ra.deg.max()),
-            ("dec", ">", self._reg_radec.vertices.dec.deg.min()),
-            ("dec", "<", self._reg_radec.vertices.dec.deg.max()),
-        ]
 
-        cat = pd.read_parquet(
-            [file_path for _, file_path in file_paths.items()],
-            filters=filters,
+        q = (
+            pl.scan_parquet(
+                [file_path for _, file_path in file_paths.items()],
+            )
+            .drop(
+                "peculiarVelocity",
+                "shear1",
+                "shear2",
+                "convergence",
+                "MW_rv",
+                "MW_av",
+            )
+            .filter(
+                (pl.col("ra") > self._reg_radec.vertices.ra.deg.min())
+                & (pl.col("ra") < self._reg_radec.vertices.ra.deg.max())
+                & (pl.col("dec") > self._reg_radec.vertices.dec.deg.min())
+                & (pl.col("dec") < self._reg_radec.vertices.dec.deg.max())
+            )
         )
+        cat = q.collect().to_pandas()
 
         final_mask = self._get_in_img_footprint(cat["ra"], cat["dec"])
         cat = cat[final_mask]
@@ -176,6 +192,10 @@ class SkyCatalogParser:
 
         cosmo = self._get_cosmology()
 
+        # Get lower/higher limirs of the SED
+        blue_lim = roman.getBandpasses()["Y106"].blue_limit * 10
+        red_lim = roman.getBandpasses()["H158"].red_limit * 10
+
         seds = {key: [] for key in COMPONENTS}
         inds = []
         for pixel in np.unique(hp_pixels):
@@ -187,9 +207,16 @@ class SkyCatalogParser:
                 ):
                     f_grp = f[f"galaxy/{sed_ind}"]
                     for row in sub_cat.loc[int(sed_ind)].itertuples():
-                        # print(row.Index)
                         gal_ind = row.galaxy_id
-                        sed_array = f_grp[str(gal_ind)][:].astype(np.float64)
+                        start, end, z_wave_list = get_redshift_ind(
+                            wave_list,
+                            row.redshift,
+                            blue_lim,
+                            red_lim,
+                        )
+                        sed_array = f_grp[str(gal_ind)][:, start:end].astype(
+                            np.float64
+                        )
                         sed_array /= (
                             4.0
                             * np.pi
@@ -197,15 +224,16 @@ class SkyCatalogParser:
                         )
                         for i, component in enumerate(COMPONENTS):
                             lut = galsim.LookupTable(
-                                x=wave_list,
-                                f=sed_array[i, :],
+                                # x=wave_list,
+                                x=z_wave_list,
+                                f=sed_array[i, :] * (1 + row.redshift),
                                 interpolant="linear",
                             )
                             sed = galsim.SED(
                                 lut,
                                 wave_type="angstrom",
                                 flux_type="fnu",
-                            ).atRedshift(row.redshift)
+                            )
                             seds[component].append(sed)
                         inds.append(row.Index)
         self.sed_catalog[object_type] = pd.DataFrame(
@@ -262,3 +290,20 @@ def get_knot_n(um_source_galaxy_obs_sm, gal_id=None, rng=None):
     if n_knot == 0:
         n_knot += 1  # need at least 1 knot
     return n_knot
+
+
+def get_redshift_ind(wave_list, redshift, blue_limit, red_limit):
+    z_factor = 1 + redshift
+    z_wave_list = wave_list * z_factor
+    good_ind = np.where(
+        (z_wave_list >= blue_limit) & (z_wave_list <= red_limit)
+    )[0]
+    start = good_ind[0]
+    end = good_ind[-1]
+    if start - 1 >= 0:
+        start -= 1
+    if end + 1 < len(z_wave_list):
+        end += 1
+    end += 1
+
+    return start, end, z_wave_list[start:end]

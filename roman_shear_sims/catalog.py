@@ -3,14 +3,6 @@ import re
 
 import numpy as np
 
-# from astropy.wcs import WCS
-# from astropy.coordinates import SkyCoord
-# from astropy import units as u
-
-# from regions import PolygonSkyRegion
-
-# import healpy as hp
-
 import galsim
 from galsim import roman
 
@@ -30,6 +22,8 @@ from .skycatlog_parser import (
 )
 
 from time import time
+
+from memory_profiler import profile
 
 
 LAYOUT_KINDS = ["grid", "random"]
@@ -256,6 +250,7 @@ class DiffSkyCatalog(SimpleGalaxyCatalog):
             gal_sed_path=gal_sed_path,
         )
 
+    @profile
     def _init_catalog(
         self,
         coadd_center,
