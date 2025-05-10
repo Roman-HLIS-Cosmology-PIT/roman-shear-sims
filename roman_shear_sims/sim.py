@@ -216,13 +216,13 @@ def make_exp(
         )
 
     # Make avg PSF used for deconvolution
-    wcs_oversampled = None
+    wcs_oversampled = make_oversample_local_wcs(
+        wcs,
+        cell_center_world,
+        oversamp_factor,
+    )
+    epoch_dict["wcs_oversampled"] = wcs_oversampled
     if make_deconv_psf:
-        wcs_oversampled = make_oversample_local_wcs(
-            wcs,
-            cell_center_world,
-            oversamp_factor,
-        )
         # psf_img_deconv, wcs_oversampled, psf_obj_deconv = get_deconv_psf(
         psf_img_deconv, wcs_oversampled = get_deconv_psf(
             psf,
@@ -238,19 +238,12 @@ def make_exp(
         )
         epoch_dict["psf_avg"] = psf_img_deconv
         # epoch_dict["psf_avg_galsim"] = psf_obj_deconv
-        epoch_dict["wcs_oversampled"] = wcs_oversampled
     else:
         epoch_dict["psf_avg"] = None
         epoch_dict["psf_avg_galsim"] = None
 
     # Make true PSF
     if chromatic & make_true_psf:
-        if wcs_oversampled is None:
-            wcs_oversampled = make_oversample_local_wcs(
-                wcs,
-                cell_center_world,
-                oversamp_factor,
-            )
         epoch_dict["psf_true_galsim"] = get_true_psf(
             galaxy_catalog.get_gsobject_delta().withFlux(1, bp_),
             psf,
