@@ -43,6 +43,7 @@ def make_sim(
     chromatic=False,
     simple_noise=False,
     noise_sigma=None,
+    image_factor=1.0,
     draw_method="phot",
     avg_gal_sed_path="/Users/aguinot/Documents/roman/test_metacoadd/gal_avg_nz_sed.npy",
     make_child_process=False,
@@ -93,6 +94,7 @@ def make_sim(
                     chromatic=chromatic,
                     simple_noise=simple_noise,
                     noise_sigma=noise_sigma,
+                    image_factor=image_factor,
                     draw_method=draw_method,
                     avg_gal_sed_path=avg_gal_sed_path,
                     make_deconv_psf=make_deconv_psf,
@@ -116,6 +118,7 @@ def make_sim(
                     chromatic=chromatic,
                     simple_noise=simple_noise,
                     noise_sigma=noise_sigma,
+                    image_factor=image_factor,
                     draw_method=draw_method,
                     avg_gal_sed_path=avg_gal_sed_path,
                     make_deconv_psf=make_deconv_psf,
@@ -154,6 +157,7 @@ def make_exp(
     chromatic=False,
     simple_noise=False,
     noise_sigma=None,
+    image_factor=1.0,
     draw_method="phot",
     avg_gal_sed_path=None,
     make_deconv_psf=False,
@@ -205,13 +209,14 @@ def make_exp(
             # cell_center_world,
             exp_center,
             rng_galsim,
+            image_factor=image_factor,
         )
     else:
         if noise_sigma is None:
             raise ValueError("noise_sigma must be provided")
         make_simple_noise(
             noise_img,
-            noise_sigma,
+            noise_sigma / np.sqrt(image_factor),
             rng_galsim,
         )
 
@@ -273,6 +278,7 @@ def make_exp(
         ):
             # Make obj
             gal = objlist["gsobject"][obj_ind]
+            gal_flux = gal.flux
             dx = objlist["dx"][obj_ind]
             dy = objlist["dy"][obj_ind]
 
@@ -286,8 +292,10 @@ def make_exp(
                 wcs,
                 cell_center_world,
                 bp_,
+                gal_flux,
                 rng_galsim,
                 draw_method=draw_method,
+                image_factor=image_factor,
             )
 
             b = stamp_image.bounds & final_img.bounds
@@ -314,8 +322,10 @@ def get_stamp(
     wcs,
     cell_center_world,
     bp,
+    gal_flux,
     rng_galsim,
     draw_method="phot",
+    image_factor=1.0,
 ):
     # gal = objlist["gsobject"][obj_ind]
     # dx = objlist["dx"][obj_ind]
@@ -331,14 +341,14 @@ def get_stamp(
     )
     image_pos = wcs.toImage(world_pos)
 
-    # Set center and offset
-    nominal_x = image_pos.x + 0.5
-    nominal_y = image_pos.y + 0.5
+    # # Set center and offset
+    # nominal_x = image_pos.x + 0.5
+    # nominal_y = image_pos.y + 0.5
 
-    stamp_center = galsim.PositionI(
-        int(math.floor(nominal_x + 0.5)),
-        int(math.floor(nominal_y + 0.5)),
-    )
+    # stamp_center = galsim.PositionI(
+    #     int(math.floor(nominal_x + 0.5)),
+    #     int(math.floor(nominal_y + 0.5)),
+    # )
     # stamp_offset = galsim.PositionD(
     #     nominal_x - stamp_center.x, nominal_y - stamp_center.y
     # )
@@ -347,11 +357,16 @@ def get_stamp(
         stamp_size = 150
         rng_draw = rng_galsim
         maxN = int(1e6)
+        n_photons = 0
+        if image_factor > 1.0:
+            n_photons = galsim.PoissonDeviate(rng_galsim, mean=gal_flux)()
+            n_photons *= image_factor
     else:
         # stamp_size = obj.getGoodImageSize(roman.pixel_scale)
         stamp_size = 100
         rng_draw = None
         maxN = None
+        n_photons = 0
 
     stamp_image = obj.drawImage(
         nx=stamp_size,
@@ -361,6 +376,7 @@ def get_stamp(
         method=draw_method,
         center=image_pos,
         rng=rng_draw,
+        n_photons=n_photons,
         maxN=maxN,
     )
 
