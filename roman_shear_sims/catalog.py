@@ -109,6 +109,7 @@ class SimpleGalaxyCatalog:
                 gsobject = self.get_gsobject(i).withFlux(
                     flux, bandpass=bandpass
                 )
+                gsobject.flux = flux
             else:
                 gsobject = self.get_gsobject(i).withFlux(flux)
             objlist["gsobject"].append(gsobject)
