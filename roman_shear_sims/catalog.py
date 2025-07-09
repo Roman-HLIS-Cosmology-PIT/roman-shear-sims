@@ -182,6 +182,106 @@ class SimpleGalaxyCatalog:
         return sed
 
 
+class GalaxyCatalog(SimpleGalaxyCatalog):
+    """
+    Galaxy simulation from Sheldon et al. 2019
+    ref: https://arxiv.org/abs/1911.02505
+    Section 3.2
+    """
+
+    def __init__(
+        self,
+        img_size,
+        seed,
+        # mag_range=[23, 26],
+        flux_range=[10, 10_000],
+        layout_kind="grid",
+        buffer=0,
+        spacing=5.0,
+        n_gal=None,
+        exp_time=roman.exptime,
+        chromatic=False,
+        gal_sed_path=None,
+        ref_band="Y106",
+    ):
+        # self._mag_range = mag_range
+        self._flux_range = flux_range
+        self.set_bandpass_ref(ref_band)
+        super().__init__(
+            img_size,
+            seed,
+            layout_kind=layout_kind,
+            buffer=buffer,
+            spacing=spacing,
+            n_gal=n_gal,
+            exp_time=exp_time,
+            chromatic=chromatic,
+            gal_sed_path=gal_sed_path,
+        )
+
+    def getObjList(self, bandpass):
+        zp = self._get_zeropoint(bandpass)
+        objlist = {
+            "gsobject": [],
+            "dx": [],
+            "dy": [],
+        }
+        for i in range(self.getNObjects()):
+            gsobject = self.get_gsobject(i)
+            objlist["gsobject"].append(gsobject)
+            objlist["dx"].append(self.dx[i])
+            objlist["dy"].append(self.dy[i])
+        return objlist
+
+    def get_gsobject(self, index):
+        return self.gsobject_list[index]
+
+    def set_bandpass_ref(self, ref_band):
+        self._bp_ref = roman.getBandpasses()[ref_band]
+
+    def _set_gsobject(self, gal_sed=1):
+        self.gsobject_list = []
+        for i in range(self._n_gal):
+            flux_tot = self.rng.uniform(
+                low=self._flux_range[0], high=self._flux_range[1]
+            )
+
+            BT_flux = self.rng.uniform(low=0, high=1)
+            bulge_flux = flux_tot * BT_flux
+            disk_flux = flux_tot - bulge_flux
+
+            disk_ell = get_g_BA(self.rng, sigma=0.2, size=1)[0]
+            disk_theta = self.rng.uniform(0, 2 * np.pi)
+            disk_hlr = self.rng.uniform(0.4, 0.6)
+
+            bulge_ell = self.rng.uniform(0, 0.4) * disk_ell
+            bulge_theta = disk_theta
+            bulge_hlr = self.rng.uniform(0.4, 0.6) * disk_hlr
+
+            shift_amp = self.rng.uniform(0.0, 0.05) * disk_hlr
+            shift_angle = self.rng.uniform(0, 2 * np.pi)
+            bulge_x_shift = shift_amp * np.cos(shift_angle)
+            bulge_y_shift = shift_amp * np.sin(shift_angle)
+
+            disk = galsim.Exponential(
+                half_light_radius=disk_hlr, flux=disk_flux
+            ).shear(g=disk_ell, beta=disk_theta * galsim.radians)
+            bulge = (
+                galsim.DeVaucouleurs(
+                    half_light_radius=bulge_hlr, flux=bulge_flux
+                )
+                .shear(g=bulge_ell, beta=bulge_theta * galsim.radians)
+                .shift(bulge_x_shift, bulge_y_shift)
+            )
+            if self._chromatic:
+                new_gal_sed = gal_sed.withFlux(flux_tot, bandpass=self._bp_ref)
+            else:
+                new_gal_sed = 1.0
+
+            self.gsobject_list.append(galsim.Add(disk + bulge) * new_gal_sed)
+            self.gsobject_list[-1].flux = flux_tot
+
+
 class DiffSkyCatalog(SimpleGalaxyCatalog):
     """
     Build catalog based on the DiffSky simulation.
@@ -673,3 +773,28 @@ def get_simple_pos(
         n_gal = len(xx)
 
     return xx[:n_gal], yy[:n_gal]
+
+
+def get_g_BA(rng, sigma=0.3, size=1):
+    """ """
+
+    def pdf(e, sigma):
+        return (
+            (1 - e**2) ** 2 * np.exp(-(e**2) / (2 * sigma**2)) * 2 * np.pi * e
+        )
+
+    samples = []
+    n_attempts = 0
+
+    # Find the maximum value of the pdf on [0, 1]
+    e_vals = np.linspace(0, 1, 1000)
+    pdf_vals = pdf(e_vals, sigma)
+    pdf_max = np.max(pdf_vals)
+
+    while len(samples) < size:
+        e = rng.uniform(0, 1)
+        u = rng.uniform(0, pdf_max)
+        if u < pdf(e, sigma):
+            samples.append(e)
+        n_attempts += 1
+    return np.array(samples)
