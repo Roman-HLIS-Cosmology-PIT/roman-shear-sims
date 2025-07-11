@@ -357,10 +357,11 @@ def get_stamp(
         stamp_size = 150
         rng_draw = rng_galsim
         maxN = int(1e6)
-        n_photons = 0
-        if image_factor > 1.0:
-            n_photons = galsim.PoissonDeviate(rng_galsim, mean=gal_flux)()
-            n_photons *= image_factor
+        # n_photons = 0
+        # if image_factor > 1.0:
+        #     n_photons = galsim.PoissonDeviate(rng_galsim, mean=gal_flux)()
+        #     n_photons *= image_factor
+        n_photons = 500_000
     else:
         # stamp_size = obj.getGoodImageSize(roman.pixel_scale)
         stamp_size = 100

@@ -252,7 +252,7 @@ class GalaxyCatalog(SimpleGalaxyCatalog):
 
             disk_ell = get_g_BA(self.rng, sigma=0.2, size=1)[0]
             disk_theta = self.rng.uniform(0, 2 * np.pi)
-            disk_hlr = self.rng.uniform(0.4, 0.6)
+            disk_hlr = self.rng.uniform(0.1, 0.4)
 
             bulge_ell = self.rng.uniform(0, 0.4) * disk_ell
             bulge_theta = disk_theta
@@ -282,7 +282,7 @@ class GalaxyCatalog(SimpleGalaxyCatalog):
             self.gsobject_list[-1].flux = flux_tot
 
 
-class DiffSkyCatalog(SimpleGalaxyCatalog):
+class DiffSkyCatalog(GalaxyCatalog):
     """
     Build catalog based on the DiffSky simulation.
 
@@ -326,6 +326,7 @@ class DiffSkyCatalog(SimpleGalaxyCatalog):
         exp_time=roman.exptime,
         chromatic=False,
         gal_sed_path=None,
+        ref_band="Y106",
     ):
         self.img_size = img_size
         self._object_types = object_types
@@ -337,6 +338,7 @@ class DiffSkyCatalog(SimpleGalaxyCatalog):
         self.rng = np.random.RandomState(seed)
         self.galsim_rng = galsim.BaseDeviate(seed)
 
+        self.set_bandpass_ref(ref_band)
         self._set_flux(flux_range)
         self._init_catalog(
             cell_world_center,
@@ -392,8 +394,8 @@ class DiffSkyCatalog(SimpleGalaxyCatalog):
         flux_dict, flux_tot = self._get_flux_components(
             sed_dict, bandpass, cache=True
         )
-        if flux_tot < self._flux_range[0] or flux_tot > self._flux_range[1]:
-            return None
+        # if flux_tot < self._flux_range[0] or flux_tot > self._flux_range[1]:
+        #     return None
         if self._chromatic:
             if not self._fixed_sed:
                 gsobj = galsim.Add(
@@ -451,6 +453,13 @@ class DiffSkyCatalog(SimpleGalaxyCatalog):
                     .loc[row["Index"][2]]
                     .to_dict()
                 )
+                _, flux_tot = self._get_flux_components(sed_row, self._bp_ref)
+                if (
+                    flux_tot < self._flux_range[0]
+                    or flux_tot > self._flux_range[1]
+                ):
+                    continue
+
                 if object_type == "diffsky_galaxy":
                     gsobj = self._get_diffsky_gsobject(
                         row,
@@ -466,6 +475,10 @@ class DiffSkyCatalog(SimpleGalaxyCatalog):
                 self.gsobject_list.append(gsobj)
                 self.sed_comp_list.append(sed_row)
                 self._get_pos(i, row["ra"], row["dec"])
+                if len(self.gsobject_list) >= self._n_gal:
+                    break
+            if len(self.gsobject_list) >= self._n_gal:
+                break
 
     def _get_diffsky_gsobject(
         self,
