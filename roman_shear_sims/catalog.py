@@ -428,7 +428,7 @@ class DiffSkyCatalog(GalaxyCatalog):
             "dx": [],
             "dy": [],
         }
-        for i in range(self.getNObjects()):
+        for i in range(len(self.gsobject_list)):
             if self._chromatic:
                 gsobject = self.get_gsobject(i, bandpass)
             else:
