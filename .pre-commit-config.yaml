@@ -59,7 +59,7 @@ repos:
     hooks:
       - id: ruff-format
         name: Format code using ruff
-        types_or: [ python, pyi, jupyter ]
+        types_or: [ python, pyi ]  # , jupyter ]  ignore jupyter files
     # Make sure Sphinx can build the documentation without issues.
   - repo: local
     hooks:
