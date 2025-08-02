@@ -17,7 +17,7 @@ from regions import PolygonSkyRegion
 
 import healpy as hp
 
-from .wcs import make_simple_coadd_wcs
+from .wcs import make_simple_coadd_wcs, get_IMCOM_WCS
 from .utils import get_new_df_index, get_dl
 
 
@@ -37,6 +37,9 @@ class SkyCatalogParser:
         The celestial coordinates of the image center.
     img_size : int
         The size of the image in pixels.
+    simu_type : str, optional
+        The type of simulation to run. Options are 'sca' for SCA simulation
+        and 'imcom' for IMCOM simulation. Default: 'sca'.
     buffer : int, optional
         The buffer size in pixels to extend the image region for
         catalog queries.
@@ -53,12 +56,14 @@ class SkyCatalogParser:
         skycatalog_config_path,
         img_world_center,
         img_size,
+        simu_type="sca",
         buffer=0,
         object_types=None,
         read_sed=True,
     ):
         self.img_world_center = img_world_center
         self.img_size = img_size
+        self._simu_type = simu_type
         self.buffer = buffer
         if object_types is None:
             self._object_types = ["diffsky_galaxy"]
@@ -101,11 +106,18 @@ class SkyCatalogParser:
         tmp_img_size = img_size + extra_buff
 
         # Get temporary WCS to query the catalog
-        coadd_wcs = make_simple_coadd_wcs(
-            img_world_center,
-            tmp_img_size,
-            as_astropy=True,
-        )
+        if self._simu_type == "sca":
+            coadd_wcs = make_simple_coadd_wcs(
+                img_world_center,
+                tmp_img_size,
+                as_astropy=True,
+            )
+        elif self._simu_type == "imcom":
+            coadd_wcs = get_IMCOM_WCS(
+                img_world_center,
+                img_size=tmp_img_size,
+                as_astropy=True,
+            )
 
         # Image footprint region
         coord_corners = SkyCoord(
@@ -127,11 +139,18 @@ class SkyCatalogParser:
         Compared to the _get_region method, this method uses the image WCS to
         check each object is within the image footprint + buffer.
         """
-        coadd_wcs = make_simple_coadd_wcs(
-            self.img_world_center,
-            self.img_size - 2 * self.buffer,
-            as_astropy=True,
-        )
+        if self._simu_type == "sca":
+            coadd_wcs = make_simple_coadd_wcs(
+                self.img_world_center,
+                self.img_size - 2 * self.buffer,
+                as_astropy=True,
+            )
+        elif self._simu_type == "imcom":
+            coadd_wcs = get_IMCOM_WCS(
+                self.img_world_center,
+                img_size=self.img_size - 2 * self.buffer,
+                as_astropy=True,
+            )
 
         coord = SkyCoord(
             ra=ra.to_numpy() * u.deg,

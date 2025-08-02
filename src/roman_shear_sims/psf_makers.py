@@ -3,7 +3,9 @@ import numpy as np
 import galsim
 from galsim import roman
 
-PSF_TYPES = ["gauss", "airy", "obs_airy", "roman"]
+from .constant import IMCOM_PSF_FWHM
+
+PSF_TYPES = ["gauss", "airy", "obs_airy", "roman", "imcom"]
 
 _rad_to_arcsec = 180 * 3600 / np.pi
 
@@ -16,7 +18,7 @@ class PSFMaker:
     ----------
     psf_type : str
         The type of PSF to create.
-        Options are 'gauss', 'airy', 'obs_airy', 'roman'.
+        Options are 'gauss', 'airy', 'obs_airy', 'roman', 'imcom'.
     fwhm : float, optional
         The full width at half maximum of the Gaussian PSF in arcseconds.
     chromatic : bool, optional
@@ -42,6 +44,9 @@ class PSFMaker:
         pupil_bin=8,
         n_waves=10,
     ):
+        if not isinstance(psf_type, str):
+            raise TypeError("psf_type must be a string")
+        psf_type = psf_type.lower()
         if psf_type not in PSF_TYPES:
             raise ValueError(
                 f"psf_type must be one of {PSF_TYPES}, got {psf_type}"
@@ -64,13 +69,24 @@ class PSFMaker:
         band : str
             The bandpass name for which to initialize the PSF parameters.
         """
+        if not isinstance(band, str):
+            raise TypeError("band must be a string")
+
         self.band = band
-        if self.wave is None:
-            bp = roman.getBandpasses()[self.band]
-            self.wave = bp.effective_wavelength
-        if self.fwhm is None:
-            self.fwhm = self.wave / roman.pixel_scale * 1e-9
-            self.fwhm *= _rad_to_arcsec
+        if self.psf_type != "imcom":
+            if self.wave is None:
+                bp = roman.getBandpasses()[self.band]
+                self.wave = bp.effective_wavelength
+            if self.fwhm is None:
+                self.fwhm = self.wave / roman.pixel_scale * 1e-9
+                self.fwhm *= _rad_to_arcsec
+        else:
+            if self.fwhm is None:
+                if self.band not in IMCOM_PSF_FWHM:
+                    raise ValueError(
+                        f"Band {self.band} not a valid IMCOM band."
+                    )
+                self.fwhm = IMCOM_PSF_FWHM[self.band]
 
     def get_psf(self, sca=None, image_pos=None, wcs=None):
         """
@@ -90,7 +106,7 @@ class PSFMaker:
         galsim.GSObject
             The PSF object.
         """
-        if self.psf_type == "gauss":
+        if self.psf_type == "gauss" or self.psf_type == "imcom":
             psf = galsim.Gaussian(fwhm=self.fwhm)
         elif self.psf_type == "airy":
             psf = galsim.Airy(lam=self.wave, diam=roman.diameter)

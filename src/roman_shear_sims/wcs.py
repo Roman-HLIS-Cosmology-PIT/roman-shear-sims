@@ -8,6 +8,8 @@ from astropy.wcs import WCS
 
 import coord
 
+from .constant import IMCOM_BLOCK_SIZE, IMCOM_PIXEL_SCALE
+
 
 def get_SCA_WCS(world_pos, SCA, PA=0.0, img_size=None):
     """
@@ -27,7 +29,7 @@ def get_SCA_WCS(world_pos, SCA, PA=0.0, img_size=None):
 
     Returns
     -------
-    galsim.WCS
+    galsim.BaseWCS
         The WCS object for the specified SCA.
     """
     a_sip, b_sip = roman.roman_wcs._parse_sip_file(
@@ -138,6 +140,48 @@ def get_SCA_WCS(world_pos, SCA, PA=0.0, img_size=None):
     if img_size is not None:
         header["CRPIX1"] = img_size / 2
         header["CRPIX2"] = img_size / 2
+    wcs = galsim.GSFitsWCS(header=header)
+    wcs.header = header
+
+    return wcs
+
+
+def get_IMCOM_WCS(world_pos, img_size=None, as_astropy=False):
+    """
+    Create a WCS for IMCOM coadds.
+
+    Parameters
+    ----------
+    world_pos : galsim.CelestialCoord
+        The celestial coordinates of the image center.
+    img_size : int, optional
+        The size of the image in pixels. If None, defaults to
+        `IMCOM_BLOCK_SIZE`.
+    as_astropy : bool, optional
+        If True, return the WCS as an Astropy WCS object. Default is False.
+
+    Returns
+    -------
+    galsim.BaseWCS
+        The WCS object for the IMCOM coadd image.
+    """
+    if img_size is None:
+        img_size = IMCOM_BLOCK_SIZE
+
+    w_astropy = WCS(naxis=2)
+    w_astropy.wcs.ctype = ["RA---STG", "DEC--STG"]
+    w_astropy.wcs.crval = [
+        world_pos.ra / coord.degrees,
+        world_pos.dec / coord.degrees,
+    ]
+    w_astropy.wcs.crpix = [img_size / 2, img_size / 2]
+    w_astropy.wcs.cdelt = [-IMCOM_PIXEL_SCALE / 3600, IMCOM_PIXEL_SCALE / 3600]
+    w_astropy.wcs.cunit = ["deg", "deg"]
+
+    if as_astropy:
+        return w_astropy
+
+    header = w_astropy.to_header()
     wcs = galsim.GSFitsWCS(header=header)
     wcs.header = header
 
