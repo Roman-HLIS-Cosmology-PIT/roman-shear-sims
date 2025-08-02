@@ -1,6 +1,3 @@
-import yaml
-import re
-
 import numpy as np
 
 import galsim
@@ -13,7 +10,6 @@ from .constant import (
     COMMON_ZERO_POINT,
     WORLD_ORIGIN,
 )
-from .wcs import make_simple_coadd_wcs
 from .skycatlog_parser import (
     SkyCatalogParser,
     get_knot_n,
@@ -34,24 +30,30 @@ class SimpleGalaxyCatalog:
     ----------
     img_size : int
         Image size in pixels.
-    rng : np.random.RandomState
-        Random number generator.
+    seed : int
+        Random seed for the catalog.
     gal_type : str
-        Galaxy type, one of ['gauss', 'exp', 'dev'].
+        Galaxy type, one of ['gauss', 'exp', 'dev']. Default: 'exp'.
     hlr : float
-        Half-light radius of the galaxy.
+        Half-light radius of the galaxy. Default: DEFAULT_HLR.
     mag : float
-        Magnitude of the galaxy.
+        Magnitude of the galaxy. Default: DEFAULT_MAG.
     layout_kind : str
-        Layout kind, one of ['grid', 'random'].
+        Layout kind, one of ['grid', 'random']. Default: 'grid'.
     buffer : int
-        Buffer size in pixels.
+        Buffer size in pixels. Default: 0.
     spacing : float
-        Spacing between galaxies in pixels.
-    n_gal : int
-        Number of galaxies.
+        Spacing between galaxies in pixels. Default: 5.0.
+    n_gal : int or None
+        Number of galaxies to draw. If None, will use as many as possible.
+        Default: None.
     exp_time : float
         Exposure time in seconds.
+    chromatic : bool
+        Whether to use chromatic SEDs. Default: False.
+    gal_sed_path : str or None
+        Path to the galaxy SED file. If None, will use a default SED.
+        Default: None.
     """
 
     def __init__(
@@ -94,9 +96,30 @@ class SimpleGalaxyCatalog:
         self._init_catalog(chromatic, gal_sed_path)
 
     def getNObjects(self):
+        """
+        Get the number of objects in the catalog.
+
+        Returns
+        -------
+        int
+            The number of objects in the catalog.
+        """
         return self._n_gal
 
     def getObjList(self, bandpass):
+        """
+        Get the object list to draw for a given bandpass.
+
+        Parameters
+        ----------
+        bandpass : galsim.Bandpass
+            The bandpass to use for the objects.
+
+        Returns
+        -------
+        dict
+            A dictionary containing the object list.
+        """
         zp = self._get_zeropoint(bandpass)
         objlist = {
             "gsobject": [],
@@ -106,12 +129,12 @@ class SimpleGalaxyCatalog:
         for i in range(self.getNObjects()):
             flux = self.get_flux(i, zp)
             if self._chromatic:
-                gsobject = self.get_gsobject(i).withFlux(
+                gsobject = self._get_gsobject(i).withFlux(
                     flux, bandpass=bandpass
                 )
                 gsobject.flux = flux
             else:
-                gsobject = self.get_gsobject(i).withFlux(flux)
+                gsobject = self._get_gsobject(i).withFlux(flux)
             objlist["gsobject"].append(gsobject)
             objlist["dx"].append(self.dx[i])
             objlist["dy"].append(self.dy[i])
@@ -128,21 +151,36 @@ class SimpleGalaxyCatalog:
         )
         self._n_gal = len(self.dx)
 
-        if chromatic:
-            gal_sed = self._get_sed(gal_sed_path)
-        else:
-            gal_sed = 1
+        gal_sed = self._get_sed(gal_sed_path) if chromatic else 1
 
         self._set_gsobject(gal_sed)
         self._set_gsobject_delta(gal_sed)
 
-    def get_gsobject(self, index):
+    def _get_gsobject(self, index):
         return self.gsobject
 
     def get_gsobject_delta(self):
+        """
+        Get a galsim DeltaFunction gsobject with the appropriate SED.
+        """
         return self.gsobject_delta
 
     def get_flux(self, index, zp):
+        """
+        Get the flux of the object at a given index in the catalog.
+
+        Parameters
+        ----------
+        index : int
+            The index of the object.
+        zp : float
+            The zero point to use for the flux calculation.
+
+        Returns
+        -------
+        float
+            The flux of the object.
+        """
         return 10 ** (-0.4 * (self._mag - zp))
 
     def _set_gsobject(self, gal_sed=1):
@@ -168,6 +206,22 @@ class SimpleGalaxyCatalog:
         )
 
     def get_flux_scaling(self, band, target_zp=COMMON_ZERO_POINT):
+        """
+        Get the flux scaling factor to convert from the current zeropoint
+        to the target zeropoint.
+
+        Parameters
+        ----------
+        band : str
+            The band to use for the flux scaling.
+        target_zp : float
+            The target zero point.
+
+        Returns
+        -------
+        float
+            The flux scaling factor.
+        """
         bp = roman.getBandpasses()[band]
         current_zp = self._get_zeropoint(bp)
         zp_diff = target_zp - current_zp
@@ -187,14 +241,41 @@ class GalaxyCatalog(SimpleGalaxyCatalog):
     Galaxy simulation from Sheldon et al. 2019
     ref: https://arxiv.org/abs/1911.02505
     Section 3.2
+
+    Parameters
+    ----------
+    img_size : int
+        Image size in pixels.
+    seed : int
+        Random seed for the catalog.
+    flux_range : list or None
+        Range of flux values for the galaxies.
+        Default: None, which means no limit.
+    layout_kind : str
+        Layout kind, one of ['grid', 'random']. Default: 'grid'.
+    buffer : int
+        Buffer size in pixels. Default: 0.
+    spacing : float
+        Spacing between galaxies in pixels. Default: 5.0.
+    n_gal : int or None
+        Number of galaxies to draw. If None, will use as many as possible.
+        Default: None.
+    exp_time : float
+        Exposure time in seconds.
+    chromatic : bool
+        Whether to use chromatic SEDs. Default: False.
+    gal_sed_path : str or None
+        Path to the galaxy SED file. If None, will use a default SED.
+        Default: None.
+    ref_band : str
+        Reference band for flux range selection. Default: "Y106".
     """
 
     def __init__(
         self,
         img_size,
         seed,
-        # mag_range=[23, 26],
-        flux_range=[10, 10_000],
+        flux_range=None,
         layout_kind="grid",
         buffer=0,
         spacing=5.0,
@@ -205,6 +286,8 @@ class GalaxyCatalog(SimpleGalaxyCatalog):
         ref_band="Y106",
     ):
         # self._mag_range = mag_range
+        if flux_range is None:
+            flux_range = [10, 10_000]
         self._flux_range = flux_range
         self.set_bandpass_ref(ref_band)
         super().__init__(
@@ -220,28 +303,48 @@ class GalaxyCatalog(SimpleGalaxyCatalog):
         )
 
     def getObjList(self, bandpass):
-        zp = self._get_zeropoint(bandpass)
+        """
+        Get the object list to draw for a given bandpass.
+
+        Parameters
+        ----------
+        bandpass : galsim.Bandpass
+            The bandpass to use for the objects.
+
+        Returns
+        -------
+        dict
+            A dictionary containing the object list.
+        """
         objlist = {
             "gsobject": [],
             "dx": [],
             "dy": [],
         }
         for i in range(self.getNObjects()):
-            gsobject = self.get_gsobject(i)
+            gsobject = self._get_gsobject(i)
             objlist["gsobject"].append(gsobject)
             objlist["dx"].append(self.dx[i])
             objlist["dy"].append(self.dy[i])
         return objlist
 
-    def get_gsobject(self, index):
+    def _get_gsobject(self, index):
         return self.gsobject_list[index]
 
     def set_bandpass_ref(self, ref_band):
+        """
+        Set the reference bandpass for the flux range selection.
+
+        Parameters
+        ----------
+        ref_band : str
+            The reference bandpass name.
+        """
         self._bp_ref = roman.getBandpasses()[ref_band]
 
     def _set_gsobject(self, gal_sed=1):
         self.gsobject_list = []
-        for i in range(self._n_gal):
+        for _ in range(self._n_gal):
             flux_tot = self.rng.uniform(
                 low=self._flux_range[0], high=self._flux_range[1]
             )
@@ -296,21 +399,27 @@ class DiffSkyCatalog(GalaxyCatalog):
         Path to the SkyCatalogs configuration file.
     object_types : list
         List of object types to include in the catalog.
+        Default: ['diffsky_galaxy'].
     do_knots : bool
-        Whether to include knots in the galaxy model.
+        Whether to include knots in the galaxy model. Default: True.
     flux_range : list or None
         Range of flux values for the galaxies.
+        Default: None, which means no limit.
     cell_world_center : galsim.celestial.CelestialCoord
         Center of the cell in world coordinates (RA, Dec).
+        Default: WORLD_ORIGIN.
     buffer : int
-        Buffer size aournd the image in pixels.
+        Buffer size around the image in pixels. Default: 0.
     exp_time : float
-        Exposure time in seconds.
+        Exposure time in seconds. Default: roman.exptime.
     chromatic : bool
         Whether to include chromatic effects in the galaxy model.
+        Default: False.
     gal_sed_path : str or None
-        If provided, will use this SED for all galaxies.
-        Path to the galaxy SED file.
+        If provided, will use this SED for all galaxies. Path to the galaxy
+        SED file. Default: None.
+    ref_band : str
+        Reference band for flux range selection. Default: "Y106".
     """
 
     def __init__(
@@ -318,7 +427,7 @@ class DiffSkyCatalog(GalaxyCatalog):
         img_size,
         seed,
         skycatalog_config_path,
-        object_types=["diffsky_galaxy"],
+        object_types=None,
         do_knots=True,
         flux_range=None,
         cell_world_center=WORLD_ORIGIN,
@@ -329,7 +438,10 @@ class DiffSkyCatalog(GalaxyCatalog):
         ref_band="Y106",
     ):
         self.img_size = img_size
-        self._object_types = object_types
+        if object_types is None:
+            self._object_types = ["diffsky_galaxy"]
+        else:
+            self._object_types = object_types
         self._do_knots = do_knots
         self._coadd_center = cell_world_center
         self._chromatic = chromatic
@@ -388,7 +500,7 @@ class DiffSkyCatalog(GalaxyCatalog):
         self.dx = np.empty(self._n_gal, dtype=np.float64)
         self.dy = np.empty(self._n_gal, dtype=np.float64)
 
-    def get_gsobject(self, index, bandpass=None):
+    def _get_gsobject(self, index, bandpass=None):
         sed_dict = self.sed_comp_list[index]
         gsobj_dict = self.gsobject_list[index]
         flux_dict, flux_tot = self._get_flux_components(
@@ -408,7 +520,7 @@ class DiffSkyCatalog(GalaxyCatalog):
                         gsobj_dict[comp].withFlux(
                             flux_dict[comp], bandpass=bandpass
                         )
-                        for comp in gsobj_dict.keys()
+                        for comp in gsobj_dict
                     ]
                 )
                 gsobj.flux = flux_tot
@@ -416,13 +528,26 @@ class DiffSkyCatalog(GalaxyCatalog):
             gsobj = galsim.Add(
                 [
                     gsobj_dict[comp].withFlux(flux_dict[comp])
-                    for comp in gsobj_dict.keys()
+                    for comp in gsobj_dict
                 ]
             )
 
         return gsobj
 
     def getObjList(self, bandpass):
+        """
+        Get the object list to draw for a given bandpass.
+
+        Parameters
+        ----------
+        bandpass : galsim.Bandpass
+            The bandpass to use for the objects.
+
+        Returns
+        -------
+        dict
+            A dictionary containing the object list.
+        """
         objlist = {
             "gsobject": [],
             "dx": [],
@@ -430,9 +555,9 @@ class DiffSkyCatalog(GalaxyCatalog):
         }
         for i in range(len(self.gsobject_list)):
             if self._chromatic:
-                gsobject = self.get_gsobject(i, bandpass)
+                gsobject = self._get_gsobject(i, bandpass)
             else:
-                gsobject = self.get_gsobject(i, bandpass)
+                gsobject = self._get_gsobject(i, bandpass)
             if gsobject is None:
                 continue
             objlist["gsobject"].append(gsobject)
@@ -557,13 +682,10 @@ class DiffSkyCatalog(GalaxyCatalog):
         self.dx[i] = u.deg * 3600
         self.dy[i] = v.deg * 3600
 
-    def get_flux(self, index, bp):
-        raise NotImplementedError
-
     def _get_flux_components(self, sed_dict, bandpass, cache=True):
         flux_dict = {}
         flux_tot = 0.0
-        for key in sed_dict.keys():
+        for key in sed_dict:
             flux = (
                 sed_dict[key].calculateFlux(bandpass)
                 * self._exp_time
@@ -579,7 +701,8 @@ class DiffSkyCatalog(GalaxyCatalog):
         elif isinstance(flux_range, (list, tuple)):
             if len(flux_range) != 2:
                 raise ValueError(
-                    f"If provided, flux_range should be a list or tuple of length 2, got {len(flux_range)}"
+                    "If provided, flux_range should be a list or tuple of"
+                    f"length 2, got {len(flux_range)}"
                 )
             flux_range_tmp = [None, None]
             if flux_range[0] is None:
@@ -588,7 +711,8 @@ class DiffSkyCatalog(GalaxyCatalog):
                 flux_range_tmp[0] = float(flux_range[0])
             else:
                 raise ValueError(
-                    f"flux_range[0] should be a number or None, got {type(flux_range[0])}"
+                    "flux_range[0] should be a number or None, got "
+                    f"{type(flux_range[0])}"
                 )
             if flux_range[1] is None:
                 flux_range_tmp[1] = np.inf
@@ -596,16 +720,19 @@ class DiffSkyCatalog(GalaxyCatalog):
                 flux_range_tmp[1] = float(flux_range[1])
             else:
                 raise ValueError(
-                    f"flux_range[1] should be a number or None, got {type(flux_range[1])}"
+                    "flux_range[1] should be a number or None, got "
+                    f"{type(flux_range[1])}"
                 )
             if flux_range_tmp[0] >= flux_range_tmp[1]:
                 raise ValueError(
-                    "flux_range[0] should be less than flux_range[1], got {flux_range}"
+                    "flux_range[0] should be less than flux_range[1], got "
+                    f"{flux_range}"
                 )
             self._flux_range = flux_range_tmp
         else:
             raise ValueError(
-                f"flux_range should be None or a list or tuple of length 2, got {flux_range}"
+                "flux_range should be None or a list or tuple of length 2, "
+                f"got {flux_range}"
             )
 
 
@@ -623,24 +750,34 @@ class SimpleDiffSkyCatalog(DiffSkyCatalog):
         Path to the SkyCatalogs configuration file.
     object_types : list
         List of object types to include in the catalog.
+        Default: ['diffsky_galaxy'].
     do_knots : bool
-        Whether to include knots in the galaxy model.
+        Whether to include knots in the galaxy model. Default: True.
     flux_range : list or None
         Range of flux values for the galaxies.
+        Default: None, which means no limit.
     cell_world_center : galsim.celestial.CelestialCoord
         Center of the cell in world coordinates (RA, Dec).
+        Default: WORLD_ORIGIN.
     layout_kind : str
         Layout kind, one of ['grid', 'random'].
     buffer : int
-        Buffer size around the image in pixels.
+        Buffer size around the image in pixels. Default: 0.
     spacing : float
-        Spacing between galaxies in arcsec.
-    n_gal : int
-        Number of galaxies.
+        Spacing between galaxies in arcsec. Default: 5.0.
+    n_gal : int or None
+        Number of galaxies to draw. If None, will use as many as possible.
+        Default: None.
     exp_time : float
-        Exposure time in seconds.
+        Exposure time in seconds. Default: roman.exptime.
     chromatic : bool
         Whether to include chromatic effects in the galaxy model.
+        Default: False.
+    gal_sed_path : str or None
+        If provided, will use this SED for all galaxies. Path to the galaxy
+        SED file. Default: None.
+    ref_band : str
+        Reference band for flux range selection. Default: "Y106".
     """
 
     def __init__(
@@ -648,7 +785,7 @@ class SimpleDiffSkyCatalog(DiffSkyCatalog):
         img_size,
         seed,
         skycatalog_config_path,
-        object_types=["diffsky_galaxy"],
+        object_types=None,
         do_knots=True,
         flux_range=None,
         cell_world_center=WORLD_ORIGIN,
@@ -659,6 +796,7 @@ class SimpleDiffSkyCatalog(DiffSkyCatalog):
         exp_time=roman.exptime,
         chromatic=False,
         gal_sed_path=None,
+        ref_band="Y106",
     ):
         self.layout_kind = layout_kind
         self.buffer = buffer
@@ -676,9 +814,23 @@ class SimpleDiffSkyCatalog(DiffSkyCatalog):
             exp_time=exp_time,
             chromatic=chromatic,
             gal_sed_path=gal_sed_path,
+            ref_band=ref_band,
         )
 
     def getObjList(self, bandpass):
+        """
+        Get the object list to draw for a given bandpass.
+
+        Parameters
+        ----------
+        bandpass : galsim.Bandpass
+            The bandpass to use for the objects.
+
+        Returns
+        -------
+        dict
+            A dictionary containing the object list.
+        """
         objlist = {
             "gsobject": [],
             "dx": [],
@@ -687,9 +839,9 @@ class SimpleDiffSkyCatalog(DiffSkyCatalog):
         k = 0
         for i in range(len(self.gsobject_list)):
             if self._chromatic:
-                gsobject = self.get_gsobject(i, bandpass)
+                gsobject = self._get_gsobject(i, bandpass)
             else:
-                gsobject = self.get_gsobject(i, bandpass)
+                gsobject = self._get_gsobject(i, bandpass)
             if gsobject is None:
                 continue
             objlist["gsobject"].append(gsobject)
@@ -726,6 +878,29 @@ def get_simple_pos(
     """
     Those functions are taken from the descwl-shear-sims package,
     refs: https://github.com/LSSTDESC/descwl-shear-sims/blob/master/descwl_shear_sims/layout/shifts.py
+
+    Parameters
+    ----------
+    img_size : int
+        Image size in pixels.
+    rng : np.random.RandomState
+        Random number generator.
+    layout_kind : str
+        Layout kind, one of ['grid', 'random']. Default: 'grid'.
+    buffer : int
+        Buffer size in pixels. Default: 0.
+    spacing : float
+        Spacing between galaxies in pixels. Default: 5.0.
+    n_gal : int or None
+        Number of galaxies to draw. If None, will use as many as possible.
+        Default: None.
+
+    Returns
+    -------
+    xx : np.ndarray
+        x-coordinates of the galaxies in arcsec.
+    yy : np.ndarray
+        y-coordinates of the galaxies in arcsec.
     """
     pixel_scale = roman.pixel_scale
 
@@ -789,7 +964,27 @@ def get_simple_pos(
 
 
 def get_g_BA(rng, sigma=0.3, size=1):
-    """ """
+    r"""
+    Generate a set of galaxy intrinsic ellipticities using the
+    Bernstein & Armstrong (2014) equation 24.
+
+    .. math::
+        p(e) = (1 - e^2)^2  e^{-e^2 / (2 \sigma^2)} 2 \pi e
+
+    Parameters
+    ----------
+    rng : np.random.RandomState
+        Random number generator.
+    sigma : float
+        Sigma parameter of the function. Default: 0.3.
+    size : int
+        Number of samples to generate. Default: 1.
+
+    Returns
+    -------
+    np.ndarray
+        Array of galaxy intrinsic ellipticities.
+    """
 
     def pdf(e, sigma):
         return (
