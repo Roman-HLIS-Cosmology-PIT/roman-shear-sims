@@ -3,8 +3,20 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to roman_shear_sims's documentation!
-========================================================================================
+roman-shear-sims
+================
+
+The package `roman-shear-sims` is meant to help for the development of shape
+measurement methods. This package intends to provide a way to create fast simulations
+of single exposures images for the Roman Space Telescope.
+
+
+.. toctree::
+   :maxdepth: 5
+   :caption: API
+
+   autoapi/index
+
 
 Dev Guide - Getting Started
 ---------------------------

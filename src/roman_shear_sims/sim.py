@@ -1,3 +1,5 @@
+"""sim.py"""
+
 from IPython import get_ipython
 
 if get_ipython().__class__.__name__ == "ZMQInteractiveShell":
@@ -40,8 +42,7 @@ def make_sim(
     make_true_psf=True,
     verbose=True,
 ):
-    """
-    Make the simulation
+    """Make the simulation
 
     Parameters
     ----------
@@ -70,8 +71,7 @@ def make_sim(
         Whether the PSF is chromatic. Default: False.
     simple_noise : bool, optional
         Whether to use simple Gaussian noise instead of the full Roman noise
-        model.
-        Default: False.
+        model. Default: False.
     noise_sigma : float, optional
         The standard deviation of the Gaussian noise if `simple_noise` is True.
         Required if `simple_noise` is True. Default: 1.0.
@@ -100,16 +100,18 @@ def make_sim(
         Each key is a band name and the value is a list of dictionaries for
         each epoch.
         Each epoch dictionary contains the following keys:
-        - 'sca': The SCA number.
-        - 'wcs': The WCS object for the epoch.
-        - 'flux_scaling': The flux scaling factor for the band.
-        - 'psf_avg': The average PSF image for deconvolution.
-        - 'psf_true_galsim': The true PSF object for the epoch.
-        - 'sci': A dictionary with keys 'shear_<g1>_<g2>' for each shear
+
+        * 'sca': The SCA number.
+        * 'wcs': The WCS object for the epoch.
+        * 'flux_scaling': The flux scaling factor for the band.
+        * 'psf_avg': The average PSF image for deconvolution.
+        * 'psf_true_galsim': The true PSF object for the epoch.
+        * 'sci': A dictionary with keys 'shear_<g1>_<g2>' for each shear
           component, containing the science image array.
-        - 'noise': The noise image array.
-        - 'noise_var': The variance of the noise image.
-        - 'weight': The weight image array.
+        * 'noise': The noise image array.
+        * 'noise_var': The variance of the noise image.
+        * 'weight': The weight image array.
+
     """
     # Set center
     # cell_center_ra, cell_center_dec = \
@@ -195,8 +197,7 @@ def make_exp(
     make_true_psf=False,
     verbose=True,
 ):
-    """
-    Make a single exposure for the simulation.
+    """Make a single exposure for the simulation.
 
     Parameters
     ----------
@@ -225,8 +226,7 @@ def make_exp(
         Whether the PSF is chromatic. Default: False.
     simple_noise : bool, optional
         Whether to use simple Gaussian noise instead of the full Roman noise
-        model.
-        Default: False.
+        model. Default: False.
     noise_sigma : float, optional
         The standard deviation of the Gaussian noise if `simple_noise` is True.
         Required if `simple_noise` is True. Default: 1.0.
@@ -247,6 +247,7 @@ def make_exp(
         Whether to create the true PSF image. Default: True.
     verbose : bool, optional
         Whether to print progress messages. Default: True.
+
     """
     bp_ = roman.getBandpasses()[band]
     seed_epoch = rng.randint(0, 2**32)
@@ -410,8 +411,7 @@ def get_stamp(
     image_factor=1.0,
     n_photons=None,
 ):
-    """
-    Get a stamp for one object. This where we draw the object.
+    """Get a stamp for one object. This where we draw the object.
 
     Parameters
     ----------
@@ -444,6 +444,7 @@ def get_stamp(
     -------
     galsim.Image
         The drawn image of the object.
+
     """
     # gal = objlist["gsobject"][obj_ind]
     # dx = objlist["dx"][obj_ind]
@@ -503,8 +504,7 @@ def get_stamp(
 
 
 def get_true_psf(star, psf, wcs, bp):
-    """
-    Get the true PSF image.
+    """Get the true PSF image.
 
     Parameters
     ----------
@@ -521,6 +521,7 @@ def get_true_psf(star, psf, wcs, bp):
     -------
     np.ndarray
         The true PSF image array.
+
     """
     tmp_true_ = galsim.Convolve(
         star,
@@ -557,8 +558,7 @@ def get_deconv_psf(
     chromatic=False,
     avg_gal_sed_path=None,
 ):
-    """
-    Get the PSF image used for the deconvolution.
+    """Get the PSF image used for the deconvolution.
 
     Parameters
     ----------
@@ -584,6 +584,7 @@ def get_deconv_psf(
     -------
     np.ndarray
         The PSF image array.
+
     """
     star_psf = galsim.DeltaFunction()
 
