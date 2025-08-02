@@ -9,6 +9,29 @@ _rad_to_arcsec = 180 * 3600 / np.pi
 
 
 class PSFMaker:
+    """
+    A class to create different types of PSFs.
+
+    Parameters
+    ----------
+    psf_type : str
+        The type of PSF to create.
+        Options are 'gauss', 'airy', 'obs_airy', 'roman'.
+    fwhm : float, optional
+        The full width at half maximum of the Gaussian PSF in arcseconds.
+    chromatic : bool, optional
+        Whether the PSF is chromatic. Default is True.
+    wave : float, optional
+        The wavelength in nanometers for the PSF.
+        Required if `psf_type` is 'roman'.
+    sca : int, optional
+        The SCA number for the Roman PSF. Default is 1.
+    pupil_bin : int, optional
+        The binning factor for the pupil. Default is 8.
+    n_waves : int, optional
+        The number of wavelengths to use for the Roman PSF. Default is 10.
+    """
+
     def __init__(
         self,
         psf_type="gauss",
@@ -18,7 +41,6 @@ class PSFMaker:
         sca=1,
         pupil_bin=8,
         n_waves=10,
-        image_pos=None,
     ):
         if psf_type not in PSF_TYPES:
             raise ValueError(
@@ -34,6 +56,14 @@ class PSFMaker:
         self.n_waves = n_waves
 
     def init_psf(self, band="Y106"):
+        """
+        Initialize the PSF parameters based on the bandpass.
+
+        Parameters
+        ----------
+        band : str
+            The bandpass name for which to initialize the PSF parameters.
+        """
         self.band = band
         if self.wave is None:
             bp = roman.getBandpasses()[self.band]
@@ -43,6 +73,23 @@ class PSFMaker:
             self.fwhm *= _rad_to_arcsec
 
     def get_psf(self, sca=None, image_pos=None, wcs=None):
+        """
+        Get the PSF object
+
+        Parameters
+        ----------
+        sca : int, optional
+            The SCA number for the Roman PSF. Default is the initialized value.
+        image_pos : galsim.CelestialCoord, optional
+            The celestial coordinates of the image center. Required if
+            `psf_type` is 'roman'.
+        wcs : galsim.WCS, optional
+            The WCS object for the image. Required if `psf_type` is 'roman'.
+        Returns
+        -------
+        galsim.GSObject
+            The PSF object.
+        """
         if self.psf_type == "gauss":
             psf = galsim.Gaussian(fwhm=self.fwhm)
         elif self.psf_type == "airy":
@@ -54,10 +101,7 @@ class PSFMaker:
                 obscuration=roman.obscuration,
             )
         elif self.psf_type == "roman":
-            if self.chromatic:
-                wave = None
-            else:
-                wave = self.wave
+            wave = None if self.chromatic else self.wave
             psf = roman.getPSF(
                 SCA=sca,
                 bandpass=self.band,

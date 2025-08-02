@@ -1,5 +1,4 @@
 import yaml
-import re
 import os
 import h5py
 
@@ -10,7 +9,6 @@ import polars as pl
 import galsim
 import galsim.roman as roman
 
-from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord
 from astropy import units as u
 from astropy.cosmology import FlatLambdaCDM
@@ -28,19 +26,44 @@ COMPONENTS = ["bulge", "disk", "knots"]
 
 
 class SkyCatalogParser:
+    """
+    Parse the OpenUniverse2024 SkyCatalog.
+
+    Parameters
+    ----------
+    skycatalog_config_path : str
+        The path to the SyCatalog .yaml configuration file.
+    img_world_center : galsim.CelestialCoord
+        The celestial coordinates of the image center.
+    img_size : int
+        The size of the image in pixels.
+    buffer : int, optional
+        The buffer size in pixels to extend the image region for
+        catalog queries.
+    object_types : list of str, optional
+        The list of object types to parse from the catalog.
+        Default is ['diffsky_galaxy'].
+    read_sed : bool, optional
+        Whether to read the SEDs from the catalog.
+        Default is True.
+    """
+
     def __init__(
         self,
         skycatalog_config_path,
         img_world_center,
         img_size,
         buffer=0,
-        object_types=["diffsky_galaxy"],
+        object_types=None,
         read_sed=True,
     ):
         self.img_world_center = img_world_center
         self.img_size = img_size
         self.buffer = buffer
-        self.object_types = object_types
+        if object_types is None:
+            self._object_types = ["diffsky_galaxy"]
+        else:
+            self._object_types = object_types
         self._read_sed = read_sed
 
         self._init_catalog()
@@ -56,6 +79,9 @@ class SkyCatalogParser:
             }
 
     def _parse_skycatalog(self, skycatalog_config_path):
+        """
+        Parse the SkyCatalog configuration file.
+        """
         with open(skycatalog_config_path, "r") as f:
             self.config = yaml.safe_load(f)
 
@@ -63,6 +89,13 @@ class SkyCatalogParser:
         self.hp_config = object_type_config["area_partition"]
 
     def _get_region(self, img_world_center, img_size, buffer=0):
+        """
+        Get the region to query the catalog based on the image center and size.
+        This reguion is used for the initial query of the catalog using:
+        min_ra < ra < max_ra and min_dec < dec < max_dec
+        The region is extended by a buffer to ensure that the entire image is
+        covered by the catalog query.
+        """
         extra_buff = int(img_size * 0.1)
         extra_buff = min(extra_buff, 100)
         tmp_img_size = img_size + extra_buff
@@ -89,6 +122,11 @@ class SkyCatalogParser:
         self._reg_vert = reg_vert
 
     def _get_in_img_footprint(self, ra, dec):
+        """
+        Check if the given RA and Dec are within the image footprint.
+        Compared to the _get_region method, this method uses the image WCS to
+        check each object is within the image footprint + buffer.
+        """
         coadd_wcs = make_simple_coadd_wcs(
             self.img_world_center,
             self.img_size - 2 * self.buffer,
@@ -103,12 +141,18 @@ class SkyCatalogParser:
         return coadd_wcs.footprint_contains(coord)
 
     def _get_hp_pix_list(self):
+        """
+        Get the HEALPix pixel list that overlaps with the image region.
+        """
         nside = self.hp_config["nside"]
         self.hp_pixels = hp.query_polygon(
             nside, self._reg_vert, inclusive=True
         )
 
     def _get_cat_paths(self, object_type, get_sed=False):
+        """
+        Get the catalog file paths for a given object type.
+        """
         root_dir = self.config["catalog_dir"]
         if not get_sed:
             cat_template = self.config["object_types"][object_type][
@@ -131,6 +175,9 @@ class SkyCatalogParser:
         return file_paths
 
     def _get_cosmology(self):
+        """
+        Get the cosmology used to create the OpenUniverse2024.
+        """
         return FlatLambdaCDM(
             H0=self.config["Cosmology"]["H0"],
             Om0=self.config["Cosmology"]["Om0"],
@@ -138,6 +185,19 @@ class SkyCatalogParser:
         )
 
     def set_catalog(self, object_type):
+        """
+        Set the catalog for a given object type.
+        This method queries the catalog files for the given object type and
+        filters the objects based on the image region.
+
+        NOTE: Probably only works for the diffsky_galaxy object type at the
+        moment.
+
+        Parameters
+        ----------
+        object_type : str
+            The type of object to set the catalog for.
+        """
         if object_type not in self.object_types:
             raise ValueError(
                 f"Object type {object_type} not in {self.object_types}"
@@ -179,6 +239,19 @@ class SkyCatalogParser:
         del final_mask
 
     def set_sed_catalog(self, object_type):
+        """
+        Set the SED catalog for a given object type.
+        This method reads the SEDs from the catalog files for the given object
+        type and stores them in the sed_catalog attribute.
+
+        NOTE: Probably only works for the diffsky_galaxy object type at the
+        moment.
+
+        Parameters
+        ----------
+        object_type : str
+            The type of object to set the catalog for.
+        """
         if self.catalog[object_type] is None:
             self.set_catalog(object_type)
         cat = self.catalog[object_type]
@@ -245,8 +318,18 @@ class SkyCatalogParser:
 
 def get_knot_size(z):
     """
-    Return the angular knot size. Knots are modelled as the same
-    physical size
+    Return the angular knot size. Knots are modelled as the same physical size.
+
+    Parameters
+    ----------
+    z : float
+        The redshift of the galaxy.
+
+    Returns
+    -------
+    float or None
+        The angular size of the knots in arcseconds, or None if the redshift is
+        above 0.6 (where knots are treated as point sources).
     """
     # Deceleration paramameter
     q = -0.5
@@ -272,6 +355,21 @@ def get_knot_size(z):
 def get_knot_n(um_source_galaxy_obs_sm, gal_id=None, rng=None):
     """
     Return random value for number of knots based on galaxy sm.
+
+    Parameters
+    ----------
+    um_source_galaxy_obs_sm : float
+        The observed stellar mass of the galaxy.
+    gal_id : int, optional
+        The galaxy ID to use for the random number generator.
+    rng : galsim.BaseDeviate, optional
+        The random number generator to use. If None, a new one is created using
+        the gal_id.
+
+    Returns
+    -------
+    int
+        The number of knots for the galaxy.
     """
     if rng is not None:
         ud = galsim.UniformDeviate(rng)
@@ -289,6 +387,31 @@ def get_knot_n(um_source_galaxy_obs_sm, gal_id=None, rng=None):
 
 
 def get_redshift_ind(wave_list, redshift, blue_limit, red_limit):
+    """
+    This is used to only load the part of the SED that is relevant for the
+    given redshift and wavelength range covered by the bandpasses.
+
+    Parameters
+    ----------
+    wave_list : np.ndarray
+        The original wavelength list of the SED.
+    redshift : float
+        The redshift of the galaxy.
+    blue_limit : float
+        The blue limit of the wavelength range.
+    red_limit : float
+        The red limit of the wavelength range.
+
+    Returns
+    -------
+    tuple
+        start : int
+            The starting index of the wavelength range.
+        end : int
+            The ending index of the wavelength range.
+        z_wave_list : np.ndarray
+            The wavelength list after applying the redshift.
+    """
     z_factor = 1 + redshift
     z_wave_list = wave_list * z_factor
     good_ind = np.where(

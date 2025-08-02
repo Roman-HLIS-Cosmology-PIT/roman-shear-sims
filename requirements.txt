@@ -1,0 +1,12 @@
+numpy
+numba
+galsim
+astropy
+regions
+h5py
+polars
+IPython
+tqdm
+pyyaml
+pandas
+healpy
