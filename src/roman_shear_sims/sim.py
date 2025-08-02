@@ -183,6 +183,7 @@ def make_exp(
     cell_center_world,
     g1,
     g2,
+    pa_point=0.0,
     exp_time=107,
     cell_size_pix=500,
     oversamp_factor=3,
@@ -216,6 +217,8 @@ def make_exp(
         The shear component g1. Default: 0.0.
     g2 : float or array-like, optional
         The shear component g2. Default: 0.0.
+    pa_point : float, optional
+        The position angle in degrees for the WCS. Default: 0.0.
     exp_time : float, optional
         The exposure time in seconds. Default: 107.
     cell_size_pix : int, optional
@@ -321,7 +324,6 @@ def make_exp(
             # cell_center_world,
             exp_center,
             bp=bp_,
-            oversamp_factor=oversamp_factor,
             chromatic=chromatic,
             # avg_gal_sed_path=avg_gal_sed_path,
             avg_gal_sed_path=None,

@@ -387,7 +387,8 @@ class GalaxyCatalog(SimpleGalaxyCatalog):
                 new_gal_sed = 1.0
 
             self.gsobject_list.append(galsim.Add(disk + bulge) * new_gal_sed)
-            self.gsobject_list[-1].flux = flux_tot
+            if self._chromatic:
+                self.gsobject_list[-1].flux = flux_tot
 
 
 class DiffSkyCatalog(GalaxyCatalog):
