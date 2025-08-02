@@ -9,6 +9,7 @@ from .constant import (
     DEFAULT_MAG,
     COMMON_ZERO_POINT,
     WORLD_ORIGIN,
+    IMCOM_PIXEL_SCALE,
 )
 from .skycatlog_parser import (
     SkyCatalogParser,
@@ -31,6 +32,9 @@ class SimpleGalaxyCatalog:
         Image size in pixels.
     seed : int
         Random seed for the catalog.
+    simu_type : str, optional
+        The type of simulation to run. Options are 'sca' for SCA simulation
+        and 'imcom' for IMCOM simulation. Default: 'sca'.
     gal_type : str
         Galaxy type, one of ['gauss', 'exp', 'dev']. Default: 'exp'.
     hlr : float
@@ -60,6 +64,7 @@ class SimpleGalaxyCatalog:
         self,
         img_size,
         seed,
+        simu_type="sca",
         gal_type="exp",
         hlr=DEFAULT_HLR,
         mag=DEFAULT_MAG,
@@ -71,6 +76,7 @@ class SimpleGalaxyCatalog:
         chromatic=False,
         gal_sed_path=None,
     ):
+        self._simu_type = simu_type
         self.img_size = img_size
         self.rng = np.random.RandomState(seed)
         if gal_type not in GAL_TYPES:
@@ -142,6 +148,7 @@ class SimpleGalaxyCatalog:
 
     def _init_catalog(self, chromatic=False, gal_sed_path=None):
         self.dx, self.dy = get_simple_pos(
+            self._simu_type,
             self.img_size,
             self.rng,
             layout_kind=self.layout_kind,
@@ -252,6 +259,9 @@ class GalaxyCatalog(SimpleGalaxyCatalog):
         Image size in pixels.
     seed : int
         Random seed for the catalog.
+    simu_type : str, optional
+        The type of simulation to run. Options are 'sca' for SCA simulation
+        and 'imcom' for IMCOM simulation. Default: 'sca'.
     flux_range : list or None
         Range of flux values for the galaxies.
         Default: None, which means no limit.
@@ -280,6 +290,7 @@ class GalaxyCatalog(SimpleGalaxyCatalog):
         self,
         img_size,
         seed,
+        simu_type="sca",
         flux_range=None,
         layout_kind="grid",
         buffer=0,
@@ -298,6 +309,7 @@ class GalaxyCatalog(SimpleGalaxyCatalog):
         super().__init__(
             img_size,
             seed,
+            simu_type=simu_type,
             layout_kind=layout_kind,
             buffer=buffer,
             spacing=spacing,
@@ -402,6 +414,9 @@ class DiffSkyCatalog(GalaxyCatalog):
         Random seed for the catalog.
     skycatalog_config_path : str
         Path to the SkyCatalogs configuration file.
+    simu_type : str, optional
+        The type of simulation to run. Options are 'sca' for SCA simulation
+        and 'imcom' for IMCOM simulation. Default: 'sca'.
     object_types : list
         List of object types to include in the catalog.
         Default: ['diffsky_galaxy'].
@@ -433,6 +448,7 @@ class DiffSkyCatalog(GalaxyCatalog):
         img_size,
         seed,
         skycatalog_config_path,
+        simu_type="sca",
         object_types=None,
         do_knots=True,
         flux_range=None,
@@ -444,6 +460,7 @@ class DiffSkyCatalog(GalaxyCatalog):
         ref_band="Y106",
     ):
         self.img_size = img_size
+        self._simu_type = simu_type
         if object_types is None:
             self._object_types = ["diffsky_galaxy"]
         else:
@@ -462,6 +479,7 @@ class DiffSkyCatalog(GalaxyCatalog):
             cell_world_center,
             img_size,
             skycatalog_config_path,
+            simu_type=simu_type,
             buffer=buffer,
             chromatic=chromatic,
             gal_sed_path=gal_sed_path,
@@ -472,6 +490,7 @@ class DiffSkyCatalog(GalaxyCatalog):
         coadd_center,
         img_size,
         skycatalog_config_path,
+        simu_type="sca",
         buffer=0,
         chromatic=True,
         gal_sed_path=None,
@@ -480,6 +499,7 @@ class DiffSkyCatalog(GalaxyCatalog):
             skycatalog_config_path,
             coadd_center,
             img_size,
+            simu_type=simu_type,
             buffer=buffer,
             object_types=self._object_types,
         )
@@ -754,6 +774,9 @@ class SimpleDiffSkyCatalog(DiffSkyCatalog):
         Random seed for the catalog.
     skycatalog_config_path : str
         Path to the SkyCatalogs configuration file.
+    simu_type : str, optional
+        The type of simulation to run. Options are 'sca' for SCA simulation
+        and 'imcom' for IMCOM simulation. Default: 'sca'.
     object_types : list
         List of object types to include in the catalog.
         Default: ['diffsky_galaxy'].
@@ -792,6 +815,7 @@ class SimpleDiffSkyCatalog(DiffSkyCatalog):
         img_size,
         seed,
         skycatalog_config_path,
+        simu_type="sca",
         object_types=None,
         do_knots=True,
         flux_range=None,
@@ -814,6 +838,7 @@ class SimpleDiffSkyCatalog(DiffSkyCatalog):
             img_size,
             seed,
             skycatalog_config_path=skycatalog_config_path,
+            simu_type=simu_type,
             object_types=object_types,
             do_knots=do_knots,
             flux_range=flux_range,
@@ -861,6 +886,7 @@ class SimpleDiffSkyCatalog(DiffSkyCatalog):
 
     def _init_pos(self):
         self.dx, self.dy = get_simple_pos(
+            self._simu_type,
             self.img_size,
             self.rng,
             layout_kind=self.layout_kind,
@@ -875,6 +901,7 @@ class SimpleDiffSkyCatalog(DiffSkyCatalog):
 
 
 def get_simple_pos(
+    simu_type,
     img_size,
     rng,
     layout_kind="grid",
@@ -887,6 +914,9 @@ def get_simple_pos(
 
     Parameters
     ----------
+    simu_type : str, optional
+        The type of simulation to run. Options are 'sca' for SCA simulation
+        and 'imcom' for IMCOM simulation. Default: 'sca'.
     img_size : int
         Image size in pixels.
     rng : np.random.RandomState
@@ -909,7 +939,14 @@ def get_simple_pos(
         y-coordinates of the galaxies in arcsec.
 
     """
-    pixel_scale = roman.pixel_scale
+    if simu_type == "sca":
+        pixel_scale = roman.pixel_scale
+    elif simu_type == "imcom":
+        pixel_scale = IMCOM_PIXEL_SCALE
+    else:
+        raise ValueError(
+            f"simu_type must be one of ['sca', 'imcom'], got {simu_type}"
+        )
 
     img_size = img_size
     buff_img_size = img_size - 2 * buffer
