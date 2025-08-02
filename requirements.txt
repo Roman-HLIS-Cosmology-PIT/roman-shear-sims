@@ -2,6 +2,7 @@ numpy
 numba
 galsim
 astropy
+regions
 h5py
 polars
 IPython
