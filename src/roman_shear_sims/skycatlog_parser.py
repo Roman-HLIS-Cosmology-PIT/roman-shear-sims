@@ -13,6 +13,8 @@ from astropy.coordinates import SkyCoord
 from astropy import units as u
 from astropy.cosmology import FlatLambdaCDM
 
+from dust_extinction.parameter_averages import F19
+
 from regions import PolygonSkyRegion
 
 import healpy as hp
@@ -66,9 +68,9 @@ class SkyCatalogParser:
         self._simu_type = simu_type
         self.buffer = buffer
         if object_types is None:
-            self._object_types = ["diffsky_galaxy"]
+            self.object_types = ["diffsky_galaxy"]
         else:
-            self._object_types = object_types
+            self.object_types = object_types
         self._read_sed = read_sed
 
         self._init_catalog()
@@ -230,11 +232,11 @@ class SkyCatalogParser:
             )
             .drop(
                 "peculiarVelocity",
-                "shear1",
-                "shear2",
-                "convergence",
+                # "shear1",
+                # "shear2",
+                # "convergence",
                 "MW_rv",
-                "MW_av",
+                # "MW_av",
             )
             .filter(
                 (pl.col("ra") > self._reg_radec.vertices.ra.deg.min())
@@ -284,6 +286,8 @@ class SkyCatalogParser:
         blue_lim = roman.getBandpasses()["Y106"].blue_limit * 10
         red_lim = roman.getBandpasses()["H158"].red_limit * 10
 
+        mw_ext = MilkyWayExtinction()
+
         seds = {key: [] for key in COMPONENTS}
         inds = []
         for pixel in np.unique(hp_pixels):
@@ -305,11 +309,22 @@ class SkyCatalogParser:
                         sed_array = f_grp[str(gal_ind)][:, start:end].astype(
                             np.float64
                         )
+
+                        # Get Milky Way extinction
+                        sed_ext = mw_ext.get_sed_ext(
+                            z_wave_list / 10, row.MW_av
+                        )
+
                         sed_array /= (
                             4.0
                             * np.pi
                             * get_dl(cosmo, row.redshiftHubble) ** 2
                         )
+                        mu = 1.0 / (
+                            (1.0 - row.convergence) ** 2
+                            - (row.shear1**2 + row.shear2**2)
+                        )
+
                         for i, component in enumerate(COMPONENTS):
                             lut = galsim.LookupTable(
                                 # x=wave_list,
@@ -322,6 +337,12 @@ class SkyCatalogParser:
                                 wave_type="angstrom",
                                 flux_type="fnu",
                             )
+
+                            # Apply magnification
+                            sed *= mu
+
+                            # # Apply Milky Way extinction
+                            sed *= sed_ext
                             seds[component].append(sed)
                         inds.append(row.Index)
         self.sed_catalog[object_type] = pd.DataFrame(
@@ -438,10 +459,48 @@ def get_redshift_ind(wave_list, redshift, blue_limit, red_limit):
     )[0]
     start = good_ind[0]
     end = good_ind[-1]
-    if start - 1 >= 0:
-        start -= 1
-    if end + 1 < len(z_wave_list):
-        end += 1
-    end += 1
+
+    start = max(0, start - 1)
+    end = min(len(z_wave_list), end + 1)
 
     return start, end, z_wave_list[start:end]
+
+
+class MilkyWayExtinction:
+    """
+    Applies extinction to a SED
+    """
+
+    def __init__(self, mwRv=3.1):
+        """
+        Parameters
+        ----------
+        mwRv : float [3.1]
+            Parameter describing the shape of the Milky Way extinction
+            curve.
+        eps : float [1e-7]
+            Small numerical offset to avoid out-of-range errors in
+            the wavelength array passed to the dust_extinction code.
+        """
+        self.extinction = F19(Rv=mwRv)
+
+    def get_sed_ext(self, wls, mwAv):
+        """
+        Returns a SED of the Milky Way extinction
+
+        Parameters
+        ----------
+        wls : np.ndarray
+            The wavelength list in nanometers.
+        mwAv : float
+            The Milky Way extinction in magnitudes (Av).
+
+        Returns
+        -------
+        mw_ext : galsim.SED
+            The SED of the Milky Way extinction
+        """
+        ext = self.extinction.extinguish(wls * u.nm, Av=mwAv)
+        lut = galsim.LookupTable(wls, ext, interpolant="linear")
+        mw_ext = galsim.SED(lut, wave_type="nm", flux_type="1").thin()
+        return mw_ext
