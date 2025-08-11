@@ -2,6 +2,7 @@ numpy
 numba
 galsim
 astropy
+dust_extinction
 regions
 h5py
 polars
