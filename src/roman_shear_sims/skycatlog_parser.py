@@ -310,16 +310,18 @@ class SkyCatalogParser:
                             np.float64
                         )
 
-                        # Get Milky Way extinction
-                        sed_ext = mw_ext.get_sed_ext(
-                            z_wave_list / 10, row.MW_av
-                        )
-
                         sed_array /= (
                             4.0
                             * np.pi
                             * get_dl(cosmo, row.redshiftHubble) ** 2
                         )
+
+                        # Get Milky Way extinction
+                        sed_ext = mw_ext.get_sed_ext(
+                            z_wave_list / 10.0, row.MW_av
+                        )
+
+                        # Get magnification
                         mu = 1.0 / (
                             (1.0 - row.convergence) ** 2
                             - (row.shear1**2 + row.shear2**2)
@@ -327,7 +329,6 @@ class SkyCatalogParser:
 
                         for i, component in enumerate(COMPONENTS):
                             lut = galsim.LookupTable(
-                                # x=wave_list,
                                 x=z_wave_list,
                                 f=sed_array[i, :] * (1 + row.redshift),
                                 interpolant="linear",
@@ -457,10 +458,10 @@ def get_redshift_ind(wave_list, redshift, blue_limit, red_limit):
     good_ind = np.where(
         (z_wave_list >= blue_limit) & (z_wave_list <= red_limit)
     )[0]
-    start = good_ind[0]
-    end = good_ind[-1]
+    start = good_ind[0] - 1
+    end = good_ind[-1] + 1
 
-    start = max(0, start - 1)
+    start = max(0, start)
     end = min(len(z_wave_list), end + 1)
 
     return start, end, z_wave_list[start:end]

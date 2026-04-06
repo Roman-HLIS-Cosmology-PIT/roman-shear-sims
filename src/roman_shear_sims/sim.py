@@ -304,8 +304,8 @@ def make_exp(
         exp_center,
         sca,
         # PA=pa_point,
-        PA=0.0,
-        img_size=cell_size_pix,
+        PA=0.0 * galsim.degrees,
+        img_size=(cell_size_pix, cell_size_pix),
     )
     # wcs = make_simple_exp_wcs(
     #     cell_center_world,
@@ -561,7 +561,7 @@ def make_IMCOM(
             psf,
             wcs,
             bp=None,
-            draw_method="fft",
+            draw_method="no_pixel",
         )
     else:
         imcom_dict["psf"] = None
@@ -612,10 +612,21 @@ def make_IMCOM(
         final_img /= roman.gain
         final_img += noise_img
         imcom_dict["sci"][f"shear_{g1_}_{g2_}"] = final_img.array
-    imcom_dict["noise"] = noise_img.array
-    imcom_dict["noise_var"] = noise_img.array.var()
+    # imcom_dict["noise"] = noise_img.array
+    # imcom_dict["noise_var"] = noise_img.array.var()
+    # imcom_dict["weight"] = (
+    #     np.ones_like(noise_img.array) / noise_img.array.var()
+    # )
+    new_noise_img = galsim.Image(cell_size_pix, cell_size_pix, wcs=wcs)
+    make_simple_noise(
+        new_noise_img,
+        noise_sigma,
+        rng_galsim,
+    )
+    imcom_dict["noise"] = new_noise_img.array
+    imcom_dict["noise_var"] = new_noise_img.array.var()
     imcom_dict["weight"] = (
-        np.ones_like(noise_img.array) / noise_img.array.var()
+        np.ones_like(new_noise_img.array) / imcom_dict["noise_var"]
     )
 
     return imcom_dict

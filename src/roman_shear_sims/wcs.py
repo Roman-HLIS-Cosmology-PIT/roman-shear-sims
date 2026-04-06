@@ -37,12 +37,12 @@ def get_SCA_WCS(world_pos, SCA, PA=0.0, img_size=None):
     )
     n_sip = roman.roman_wcs.n_sip
 
-    PA *= galsim.degrees
+    # PA *= galsim.degrees
     crval = world_pos
     i_sca = SCA
 
     if img_size is None:
-        img_size = roman.n_pix
+        img_size = (roman.n_pix, roman.n_pix)
 
     # Leave phi_p at 180 (0 if dec_targ==-90), so that tangent plane axes
     # remain oriented along celestial coordinates. In other words, phi_p is the
@@ -138,8 +138,8 @@ def get_SCA_WCS(world_pos, SCA, PA=0.0, img_size=None):
 
     header = galsim.FitsHeader(header)
     if img_size is not None:
-        header["CRPIX1"] = img_size / 2
-        header["CRPIX2"] = img_size / 2
+        header["CRPIX1"] = img_size[0] / 2
+        header["CRPIX2"] = img_size[1] / 2
     wcs = galsim.GSFitsWCS(header=header)
     wcs.header = header
 
