@@ -36,6 +36,7 @@ def make_sim(
     chromatic=False,
     simple_noise=False,
     noise_sigma=1.0,
+    n_noise_realizations=1,
     image_factor=1.0,
     draw_method="phot",
     n_photons=None,
@@ -80,6 +81,8 @@ def make_sim(
     noise_sigma : float, optional
         The standard deviation of the Gaussian noise if `simple_noise` is True.
         Required if `simple_noise` is True. Default: 1.0.
+    n_noise_realizations : int, optional
+        The number of independent noise realizations to create. Default: 1.
     image_factor : float, optional
         A factor to scale the noise level. Default: 1.0.
     draw_method : str, optional
@@ -115,8 +118,8 @@ def make_sim(
         * 'psf_true_galsim': The true PSF object for the epoch.
         * 'sci': A dictionary with keys 'shear_<g1>_<g2>' for each shear
           component, containing the science image array.
-        * 'noise': The noise image array.
-        * 'noise_var': The variance of the noise image.
+        * 'noise': List of noise realizations as image arrays.
+        * 'noise_var': The variance of the noise images.
         * 'weight': The weight image array.
 
     """
@@ -172,6 +175,7 @@ def make_sim(
                     chromatic=chromatic,
                     simple_noise=simple_noise,
                     noise_sigma=noise_sigma,
+                    n_noise_realizations=n_noise_realizations,
                     image_factor=image_factor,
                     draw_method=draw_method,
                     n_photons=n_photons,
@@ -195,6 +199,7 @@ def make_sim(
                     cell_size_pix=cell_size_pix,
                     simple_noise=simple_noise,
                     noise_sigma=noise_sigma,
+                    n_noise_realizations=n_noise_realizations,
                     image_factor=6,
                     draw_method=draw_method,
                     n_photons=n_photons,
@@ -229,6 +234,7 @@ def make_exp(
     chromatic=False,
     simple_noise=False,
     noise_sigma=None,
+    n_noise_realizations=1,
     image_factor=1.0,
     draw_method="phot",
     n_photons=None,
@@ -272,6 +278,8 @@ def make_exp(
     noise_sigma : float, optional
         The standard deviation of the Gaussian noise if `simple_noise` is True.
         Required if `simple_noise` is True. Default: 1.0.
+    n_noise_realizations : int, optional
+        The number of independent noise realizations to create. Default: 1.
     image_factor : float, optional
         A factor to scale the noise level. Default: 1.0.
     draw_method : str, optional
@@ -325,7 +333,7 @@ def make_exp(
         wcs=wcs,
     )
 
-    ## Make noise
+    ## Make noise for science image
     noise_img = galsim.Image(cell_size_pix, cell_size_pix, wcs=wcs)
     rng_galsim = galsim.BaseDeviate(seed_epoch)
     if not simple_noise:
@@ -429,11 +437,36 @@ def make_exp(
         final_img /= roman.gain
         final_img += noise_img
         epoch_dict["sci"][f"shear_{g1_}_{g2_}"] = final_img.array
-    epoch_dict["noise"] = noise_img.array
+    # epoch_dict["noise"] = noise_img.array
     epoch_dict["noise_var"] = noise_img.array.var()
     epoch_dict["weight"] = (
         np.ones_like(noise_img.array) / noise_img.array.var()
     )
+
+    # Make independent noise image
+    noise_realizations = []
+    for _ in range(n_noise_realizations):
+        noise_img = galsim.Image(cell_size_pix, cell_size_pix, wcs=wcs)
+        if not simple_noise:
+            make_roman_noise(
+                noise_img,
+                bp_,
+                exp_time,
+                # cell_center_world,
+                exp_center,
+                rng_galsim,
+                image_factor=image_factor,
+            )
+        else:
+            if noise_sigma is None:
+                raise ValueError("noise_sigma must be provided")
+            make_simple_noise(
+                noise_img,
+                noise_sigma / np.sqrt(image_factor),
+                rng_galsim,
+            )
+        noise_realizations.append(noise_img.array)
+    epoch_dict["noise"] = noise_realizations
 
     return epoch_dict
 
@@ -450,6 +483,7 @@ def make_IMCOM(
     cell_size_pix=500,
     simple_noise=False,
     noise_sigma=None,
+    n_noise_realizations=1,
     image_factor=6.0,
     draw_method="phot",
     n_photons=None,
@@ -486,6 +520,8 @@ def make_IMCOM(
     noise_sigma : float, optional
         The standard deviation of the Gaussian noise if `simple_noise` is True.
         Required if `simple_noise` is True. Default: 1.0.
+    n_noise_realizations : int, optional
+        The number of independent noise realizations to create. Default: 1.
     image_factor : float, optional
         A factor to scale the noise level. Default: 1.0.
     draw_method : str, optional
@@ -613,21 +649,22 @@ def make_IMCOM(
         final_img += noise_img
         imcom_dict["sci"][f"shear_{g1_}_{g2_}"] = final_img.array
     # imcom_dict["noise"] = noise_img.array
-    # imcom_dict["noise_var"] = noise_img.array.var()
-    # imcom_dict["weight"] = (
-    #     np.ones_like(noise_img.array) / noise_img.array.var()
-    # )
-    new_noise_img = galsim.Image(cell_size_pix, cell_size_pix, wcs=wcs)
-    make_simple_noise(
-        new_noise_img,
-        noise_sigma,
-        rng_galsim,
-    )
-    imcom_dict["noise"] = new_noise_img.array
-    imcom_dict["noise_var"] = new_noise_img.array.var()
+    imcom_dict["noise_var"] = noise_img.array.var()
     imcom_dict["weight"] = (
-        np.ones_like(new_noise_img.array) / imcom_dict["noise_var"]
+        np.ones_like(noise_img.array) / noise_img.array.var()
     )
+
+    # Make independent noise image
+    noise_realizations = []
+    for _ in range(n_noise_realizations):
+        new_noise_img = galsim.Image(cell_size_pix, cell_size_pix, wcs=wcs)
+        make_simple_noise(
+            new_noise_img,
+            noise_sigma,
+            rng_galsim,
+        )
+        noise_realizations.append(new_noise_img.array)
+    imcom_dict["noise"] = noise_realizations
 
     return imcom_dict
 
